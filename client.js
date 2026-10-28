@@ -321,6 +321,7 @@ window.__ModuleLoader__.load({
       chevronLeft: '<path d="m15 18-6-6 6-6" />',
       chevronRight: '<path d="m9 18 6-6-6-6" />',
       arrowRight: '<path d="M5 12h14" /> <path d="m12 5 7 7-7 7" />',
+      sequence: '<path d="M4 7h10" /> <path d="M4 12h10" /> <path d="M4 17h6" /> <path d="M18 5v12" /> <path d="m15 14 3 3 3-3" />',
       close: '<path d="M18 6 6 18" /> <path d="m6 6 12 12" />',
       minus: '<path d="M5 12h14" />',
       volume: '<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" /> <path d="M16 9a5 5 0 0 1 0 6" /> <path d="M19.364 18.364a9 9 0 0 0 0-12.728" />',
@@ -1090,6 +1091,8 @@ window.__ModuleLoader__.load({
       const toggle = () => setOpen((value) => !value)
 
       return h('div', { ref: wrapRef, className: 'dshm dshm-mini-wrap' },
+        // Diagnostic for the click path: shows only while the panel state is open.
+        open ? h('div', { style: { position: 'fixed', left: 4, top: 4, width: 8, height: 8, borderRadius: 4, zIndex: 9999, background: '#ff2d55', pointerEvents: 'none' } }) : null,
         h('div', {
           className: 'dshm-mini',
           'data-collapsed': wide ? undefined : 'true',
@@ -1157,7 +1160,7 @@ window.__ModuleLoader__.load({
     /* ────────────────────────── now playing ────────────────────────────── */
 
     const MODE_ORDER = ['sequence', 'all', 'one']
-    const MODE_ICON = { sequence: 'arrowRight', all: 'repeat', one: 'repeatOne' }
+    const MODE_ICON = { sequence: 'sequence', all: 'repeat', one: 'repeatOne' }
     const MODE_LABEL = { sequence: 'np.mode.sequence', all: 'np.mode.all', one: 'np.mode.one' }
 
     /** Shuffle toggle — the left slot of Apple Music's transport row. */
@@ -1221,7 +1224,7 @@ window.__ModuleLoader__.load({
 
     function MiniPopover({ open, wrapRef, track, player, status, getPlayer, onClose }) {
       const [closing, setClosing] = useState(false)
-      const [queueOpen, setQueueOpen] = useState(false)
+      const [screen, setScreen] = useState('now')
       const panelRef = useRef(null)
       const wasOpen = useRef(false)
       const closingTimer = useRef(null)
@@ -1272,7 +1275,7 @@ window.__ModuleLoader__.load({
         return () => { try { previous?.focus?.() } catch { /* element gone */ } }
       }, [open])
 
-      useEffect(() => { if (!open) setQueueOpen(false) }, [open])
+      useEffect(() => { if (!open) setScreen('now') }, [open])
 
       if (!visible) return null
       // Nothing playing: the popover has nothing to say. The row keeps working.
@@ -1303,16 +1306,18 @@ window.__ModuleLoader__.load({
       },
       h('div', { className: 'dshm-pop-head' },
         h(IconButton, { name: 'chevronDown', label: t('np.collapse'), onClick: onClose, autoFocus: true }),
-        h('div', { className: 'dshm-pop-title' }, t('np.title')),
+        h('div', { className: 'dshm-pop-title' }, screen === 'queue' ? t('np.queue') : t('np.title')),
         h(IconButton, {
           name: 'queue',
           label: t('np.queue'),
-          active: queueOpen,
-          pressed: queueOpen,
-          onClick: () => setQueueOpen((value) => !value),
+          active: screen === 'queue',
+          pressed: screen === 'queue',
+          onClick: () => setScreen((value) => (value === 'queue' ? 'now' : 'queue')),
         })),
 
-      h('div', { className: 'dshm-pop-body', 'data-selectable': 'false' },
+      screen === 'queue'
+        ? h(QueuePanel, { player, tracksVersion: status?.library?.tracks })
+        : h('div', { className: 'dshm-pop-body', 'data-selectable': 'false' },
         h('div', { className: 'dshm-pop-art' },
           h(Cover, { track, size: '100%', radius: 12 })),
         h('div', { className: 'dshm-pop-meta' },
@@ -1345,9 +1350,7 @@ window.__ModuleLoader__.load({
             name: 'next', label: t('mini.next'), size: 'lg',
             onClick: () => guarded(command('player.next'), t('mini.next')),
           }),
-          h(RepeatButton, { mode })),
-
-        queueOpen ? h(QueuePanel, { player, tracksVersion: status?.library?.tracks }) : null))
+          h(RepeatButton, { mode }))))
     }
 
     /**
