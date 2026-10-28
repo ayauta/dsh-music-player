@@ -125,6 +125,40 @@ await call('prefs.set', { patch: { fade: true } })
 player = await state()
 check(player.fade === true, 'fade reported on again')
 
+
+console.log('\n9. switching the playback mode must not restart the current track')
+await call('player.mode', { mode: 'all' })
+await call('queue.play', { ids: [a.id, b.id, c.id], startIndex: 0 })
+player = await waitForTrack((p) => p.trackId === a.id)
+await call('player.seek', { ms: 30000 })
+await sleep(1200)
+const beforeMode = await state()
+const beforeFile = (await engine()).currentFile
+for (const mode of ['sequence', 'all', 'one', 'shuffle']) {
+  await call('player.mode', { mode })
+  await sleep(350)
+  const now = await state()
+  const file = (await engine()).currentFile
+  check(now.trackId === beforeMode.trackId, `mode ${mode}: same track`, { got: now.trackId })
+  check(file === beforeFile, `mode ${mode}: same file in mpv`)
+  check(Math.abs(now.positionMs - beforeMode.positionMs) < 4000, `mode ${mode}: position kept`, { pos: now.positionMs, was: beforeMode.positionMs })
+}
+
+console.log('\n10. sequence mode stops after the last track')
+await call('player.mode', { mode: 'sequence' })
+await call('queue.play', { ids: [a.id, b.id], startIndex: 1 })
+player = await waitForTrack((p) => p.trackId === b.id)
+await call('player.seek', { ms: Math.max(0, player.durationMs - 1200) })
+await sleep(4500)
+const stopped = await state()
+check(stopped.playing === false, 'sequence stopped at the end of the queue', { playing: stopped.playing, paused: stopped.paused })
+
+console.log('\n11. cycling back to a normal mode resumes control')
+await call('player.mode', { mode: 'all' })
+await call('queue.play', { ids: [a.id, b.id], startIndex: 0 })
+player = await waitForTrack((p) => p.playing === true)
+check(player.trackId === a.id, 'playback restarted after sequence')
 await call('player.pause')
 console.log(failures === 0 ? '\nALL PLAYBACK CHECKS PASSED' : `\n${failures} PLAYBACK CHECK(S) FAILED`)
 process.exit(failures === 0 ? 0 : 1)
+

@@ -35,12 +35,14 @@ window.__ModuleLoader__.load({
       'mini.next': '下一首',
       'np.title': '正在播放',
       'np.close': '关闭',
+      'np.collapse': '收起',
       'np.queue': '播放队列',
       'np.library': '音乐库',
       'np.lyrics': '歌词',
       'np.details': '文件与规格',
       'np.noLyrics': '没有歌词文件',
       'np.untimed': '歌词没有时间码，仅静态显示',
+      'np.mode.sequence': '顺序播放',
       'np.mode.one': '单曲循环',
       'np.mode.all': '列表循环',
       'np.mode.shuffle': '随机播放',
@@ -169,12 +171,14 @@ window.__ModuleLoader__.load({
       'mini.next': 'Next',
       'np.title': 'Now Playing',
       'np.close': 'Close',
+      'np.collapse': 'Collapse',
       'np.queue': 'Play queue',
       'np.library': 'Library',
       'np.lyrics': 'Lyrics',
       'np.details': 'File & format',
       'np.noLyrics': 'No lyric file',
       'np.untimed': 'Untimed lyrics',
+      'np.mode.sequence': 'Play in order',
       'np.mode.one': 'Repeat one',
       'np.mode.all': 'Repeat all',
       'np.mode.shuffle': 'Shuffle',
@@ -402,23 +406,27 @@ window.__ModuleLoader__.load({
   background: linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-label-primary) 5%, var(--dsw-alias-bg-layer-2)) 0%,
     var(--dsw-alias-bg-layer-2) 100%); }
 
-/* mini player */
-.dshm-mini { position: relative; display: flex; align-items: center; gap: 9px; width: 100%;
-  padding: 9px 9px 11px; border-radius: var(--dshm-r-card); text-align: left; overflow: hidden;
-  background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l1);
-  transition: border-color 140ms var(--dshm-ease); }
-.dshm-mini:hover { border-color: var(--dsw-alias-border-l2); }
-.dshm-mini[data-empty="true"] { gap: 8px; padding: 10px; }
-.dshm-mini-cover { border: 0; padding: 0; background: transparent; border-radius: 7px; cursor: pointer; flex: none; }
-.dshm-mini-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto;
+/* mini player — one host sidebar row, no card */
+.dshm-mini { position: relative; display: block; width: 100%; border: 0; background: transparent;
+  border-radius: 7px; padding: 6px 8px 15px; text-align: left; cursor: pointer;
+  transition: background 130ms var(--dshm-ease); }
+.dshm-mini:hover { background: color-mix(in srgb, var(--dsw-alias-label-primary) 7%, transparent); }
+.dshm-mini:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: -2px; }
+.dshm-mini-row { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.dshm-mini-cover { border: 0; padding: 0; background: transparent; border-radius: 6px; cursor: pointer; flex: none; }
+.dshm-mini-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto;
   background: transparent; border: 0; padding: 0; text-align: left; cursor: pointer; }
-.dshm-mini-title { font-size: var(--dshm-fs-title); font-weight: 600; letter-spacing: -.006em; line-height: 1.22;
+.dshm-mini-title { font-size: var(--dshm-fs-title); font-weight: 600; letter-spacing: -.006em; line-height: 1.2;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .dshm-mini-sub { font-size: var(--dshm-fs-sub); line-height: 1.2; color: var(--dsw-alias-label-secondary);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dshm-mini-controls { display: flex; align-items: center; gap: 0; flex: none; }
-.dshm-mini-rail { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.dshm-mini-progress { position: absolute; left: 9px; right: 9px; bottom: 5px; }
+.dshm-mini[data-collapsed="true"] { padding: 6px; display: flex; justify-content: center; }
+.dshm-mini-progress { position: absolute; left: 49px; right: 8px; bottom: 3px; }
+.dshm-mini-progress .dshm-progress { height: 8px; }
+.dshm-mini-progress .dshm-progress-thumb { display: none; width: 10px; height: 10px; margin: -5px 0 0 -5px; }
+.dshm-mini-progress:hover .dshm-progress-thumb,
+.dshm-mini-progress .dshm-progress[data-dragging="true"] .dshm-progress-thumb { display: block; }
 
 /* progress */
 .dshm-progress { position: relative; display: flex; align-items: center; width: 100%; touch-action: none;
@@ -451,38 +459,38 @@ window.__ModuleLoader__.load({
   opacity: 0; transition: opacity 110ms var(--dshm-ease); pointer-events: none; }
 .dshm-progress[data-dragging="true"] .dshm-progress-bubble { opacity: 1; }
 
-/* now playing */
-.dshm-backdrop { position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center;
-  background: color-mix(in srgb, #000 34%, transparent); animation: dshm-fade 160ms var(--dshm-ease); }
-.dshm-sheet { width: min(420px, 92vw); max-height: min(720px, 90vh); display: flex; flex-direction: column;
+/* now playing popover */
+.dshm-pop { position: fixed; z-index: 75; display: flex; flex-direction: column;
   background: var(--dsw-alias-bg-overlay); border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: var(--dshm-r-sheet); box-shadow: 0 28px 72px rgba(0,0,0,.32); overflow: hidden;
-  animation: dshm-rise 190ms var(--dshm-ease); }
-.dshm-sheet-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 4px; flex: none; }
-.dshm-sheet-title { flex: 1 1 auto; text-align: center; font-size: var(--dshm-fs-caption); font-weight: 600;
+  border-radius: 14px; box-shadow: 0 22px 60px rgba(0,0,0,.30); overflow: hidden;
+  transform-origin: bottom left; animation: dshm-pop-in 160ms var(--dshm-ease); pointer-events: auto; }
+.dshm-pop[data-closing="true"] { animation: dshm-pop-out 120ms var(--dshm-ease) forwards; }
+.dshm-pop-head { display: flex; align-items: center; gap: 4px; padding: 8px 8px 0; flex: none; }
+.dshm-pop-title { flex: 1 1 auto; text-align: center; font-size: var(--dshm-fs-caption); font-weight: 600;
   letter-spacing: .07em; text-transform: uppercase; color: var(--dsw-alias-label-secondary); }
-.dshm-sheet-body { overflow: auto; padding: 4px 20px 16px; }
-.dshm-np-art { width: min(100%, 292px); max-height: 36vh; aspect-ratio: 1 / 1; margin: 0 auto;
-  border-radius: 14px; overflow: hidden; box-shadow: 0 12px 34px rgba(0,0,0,.20); }
-.dshm-np-meta { padding: 14px 2px 4px; min-width: 0; }
-.dshm-np-title { font-size: var(--dshm-fs-display); font-weight: 600; letter-spacing: -.012em; line-height: 1.24;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dshm-np-sub { font-size: 12.5px; color: var(--dsw-alias-label-secondary); margin-top: 3px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dshm-times { display: flex; justify-content: space-between; font-size: var(--dshm-fs-caption);
-  color: var(--dsw-alias-label-secondary); margin-top: 2px; margin-bottom: 2px; }
-.dshm-transport { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 6px 0 2px; }
+.dshm-pop-body { padding: 4px 16px 12px; overflow: auto; }
+.dshm-pop-art { width: 176px; height: 176px; margin: 2px auto 0; border-radius: 12px; overflow: hidden;
+  box-shadow: 0 8px 26px rgba(0,0,0,.18); }
+.dshm-pop-meta { padding: 12px 2px 2px; min-width: 0; }
+.dshm-pop-name { font-size: 17px; font-weight: 600; letter-spacing: -.01em; line-height: 1.25;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dshm-pop-sub { font-size: 12.5px; color: var(--dsw-alias-label-secondary); margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dshm-pop-times { display: flex; justify-content: space-between; align-items: baseline; margin-top: 3px;
+  font-size: var(--dshm-fs-caption); color: var(--dsw-alias-label-secondary); }
+.dshm-pop-transport { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 2px 0; }
+.dshm-sheet-body { padding: 4px 12px 12px; overflow: auto; }
+.dshm-pop-foot { display: flex; align-items: center; gap: 2px; padding: 4px 8px 6px; flex: none;
+  border-top: 1px solid var(--dsw-alias-border-l1); }
 .dshm-rowline { display: flex; align-items: center; gap: 6px; padding-top: 6px; }
 .dshm-grow { flex: 1 1 auto; }
-.dshm-vol { display: flex; align-items: center; gap: 8px; width: 132px; flex: none; }
+.dshm-vol { display: flex; align-items: center; gap: 8px; width: 124px; flex: none; }
 .dshm-vol .dshm-progress-track { height: 3px; }
 .dshm-vol .dshm-progress-fill { background: var(--dsw-alias-label-secondary); }
 .dshm-vol .dshm-progress-thumb { display: none; }
-.dshm-chips { display: flex; align-items: center; gap: 6px; padding-top: 8px; }
+.dshm-chips { display: flex; align-items: center; gap: 6px; padding-top: 6px; }
 .dshm-chip { font-size: 10.5px; font-weight: 500; letter-spacing: .02em; padding: 1.5px 6px; border-radius: 5px;
   border: 1px solid var(--dsw-alias-border-l1); color: var(--dsw-alias-label-secondary); white-space: nowrap; }
-.dshm-foot { display: flex; align-items: center; gap: 2px; padding: 4px 10px 8px; flex: none;
-  border-top: 1px solid var(--dsw-alias-border-l1); }
 .dshm-disclose { border: 0; background: transparent; color: var(--dsw-alias-label-secondary);
   font-size: var(--dshm-fs-sub); font-weight: 500; padding: 6px 8px; border-radius: 7px; cursor: pointer;
   display: inline-flex; align-items: center; gap: 5px; }
@@ -624,9 +632,11 @@ window.__ModuleLoader__.load({
 .dshm-lyric-line[data-active="true"] { color: var(--dsw-alias-label-primary); font-weight: 600; }
 
 @keyframes dshm-fade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes dshm-pop-in { from { opacity: 0; transform: translateY(8px) scale(.97) } to { opacity: 1; transform: none } }
+@keyframes dshm-pop-out { from { opacity: 1; transform: none } to { opacity: 0; transform: translateY(6px) scale(.985) } }
 @keyframes dshm-rise { from { opacity: 0; transform: translateY(10px) scale(.995) } to { opacity: 1; transform: none } }
 @media (prefers-reduced-motion: reduce) {
-  .dshm-backdrop, .dshm-sheet, .dshm-menu { animation: none !important; }
+  .dshm-pop, .dshm-menu { animation: none !important; }
   .dshm-ib, .dshm-lyric-line, .dshm-toggle, .dshm-toggle::after, .dshm-card-art,
   .dshm-progress-track, .dshm-progress-thumb, .dshm-mini { transition: none !important; }
 }
@@ -985,6 +995,9 @@ window.__ModuleLoader__.load({
 
     /* ────────────────────────── mini player ────────────────────────────── */
 
+    /** The popover measures this node to anchor itself above the mini player. */
+    const miniAnchor = { node: null }
+
     function MiniPlayer(props) {
       const snap = useSession()
       const status = snap.status
@@ -994,170 +1007,293 @@ window.__ModuleLoader__.load({
       const latest = useRef(player)
       latest.current = player
       const getPlayer = useCallback(() => latest.current, [])
+      const rootRef = useRef(null)
+
+      useEffect(() => {
+        miniAnchor.node = rootRef.current
+        return () => { if (miniAnchor.node === rootRef.current) miniAnchor.node = null }
+      }, [track === null, wide])
 
       if (track === null) {
         return h('button', {
+          ref: rootRef,
           type: 'button',
           className: 'dshm dshm-mini dshm-focusable',
-          'data-empty': 'true',
+          'data-collapsed': wide ? undefined : 'true',
           'aria-label': t('mini.empty'),
           title: t('mini.empty'),
           onClick: openLibraryPanel,
-          style: wide ? undefined : { justifyContent: 'center', padding: 8 },
+          style: wide ? { display: 'flex', alignItems: 'center', gap: 9, paddingBottom: 8 } : undefined,
         },
-        h(Icon, { name: 'library', size: 16 }),
+        h(Icon, { name: 'library', size: wide ? 16 : 17 }),
         wide ? h('span', { className: 'dshm-mini-sub', style: { color: 'var(--dsw-alias-label-secondary)' } }, t('mini.empty')) : null)
       }
 
       const playing = player.playing === true && player.paused !== true
       const showProgress = wide && (status?.prefs?.miniProgress !== false)
+      const stop = (event) => event.stopPropagation()
 
       return h('div', {
-        className: cx('dshm', wide ? 'dshm-mini' : 'dshm-mini'),
-        style: wide ? undefined : { flexDirection: 'column', padding: 6, gap: 4 },
-      },
-      h('button', {
-        type: 'button',
-        className: 'dshm-mini-cover dshm-focusable',
-        'aria-label': t('mini.open'),
-        title: t('mini.open'),
-        onClick: () => setNowPlaying(true),
-      }, h(Cover, { track, size: wide ? 40 : 32, radius: 7 })),
-
-      wide ? h('button', {
-        type: 'button',
-        className: 'dshm-mini-info dshm-focusable',
-        onClick: () => setNowPlaying(true),
+        ref: rootRef,
+        className: 'dshm dshm-mini',
+        'data-collapsed': wide ? undefined : 'true',
+        role: 'group',
         'aria-label': `${track.title} — ${t('mini.open')}`,
+        onClick: () => setNowPlaying(!uiState.nowPlaying),
       },
-      h('span', { className: 'dshm-mini-title' }, track.title),
-      h('span', { className: 'dshm-mini-sub' }, track.artist ?? t('spec.todo'))) : null,
+      h('div', { className: 'dshm-mini-row' },
+        h('button', {
+          type: 'button',
+          className: 'dshm-mini-cover dshm-focusable',
+          'aria-label': t('mini.open'),
+          title: t('mini.open'),
+          onClick: (event) => { event.stopPropagation(); setNowPlaying(!uiState.nowPlaying) },
+        }, h(Cover, { track, size: wide ? 32 : 30, radius: 6 })),
 
-      wide ? h('div', { className: 'dshm-mini-controls' },
-        h(IconButton, { name: 'prev', label: t('mini.prev'), onClick: () => guarded(command('player.prev'), t('mini.prev')) }),
-        h(IconButton, {
-          name: playing ? 'pause' : 'play',
-          label: playing ? t('mini.pause') : t('mini.play'),
-          active: false,
-          onClick: () => guarded(command('player.toggle'), t('mini.play')),
-        }),
-        h(IconButton, { name: 'next', label: t('mini.next'), onClick: () => guarded(command('player.next'), t('mini.next')) })) : null,
+        wide ? h('button', {
+          type: 'button',
+          className: 'dshm-mini-info dshm-focusable',
+          onClick: (event) => { event.stopPropagation(); setNowPlaying(!uiState.nowPlaying) },
+          'aria-label': `${track.title} — ${t('mini.open')}`,
+        },
+        h('span', { className: 'dshm-mini-title' }, track.title),
+        h('span', { className: 'dshm-mini-sub' }, track.artist ?? t('spec.todo'))) : null,
 
-      showProgress ? h('div', { className: 'dshm-mini-progress' },
-        h(ProgressBar, {
-          getPlayer,
-          variant: 'mini',
-          onSeek: (ms) => guarded(command('player.seek', { ms }), t('np.seek')),
-        })) : null)
+        wide ? h('div', { className: 'dshm-mini-controls' },
+          h(IconButton, { name: 'prev', label: t('mini.prev'), onClick: () => guarded(command('player.prev'), t('mini.prev')) }),
+          h(IconButton, {
+            name: playing ? 'pause' : 'play',
+            label: playing ? t('mini.pause') : t('mini.play'),
+            onClick: () => guarded(command('player.toggle'), t('mini.play')),
+          }),
+          h(IconButton, { name: 'next', label: t('mini.next'), onClick: () => guarded(command('player.next'), t('mini.next')) })) : null),
+
+      showProgress ? h('div', {
+        className: 'dshm-mini-progress',
+        onClick: stop,
+        onPointerDown: stop,
+      }, h(ProgressBar, {
+        getPlayer,
+        variant: 'mini',
+        onSeek: (ms) => guarded(command('player.seek', { ms }), t('np.seek')),
+      })) : null)
     }
 
     /* ────────────────────────── now playing ────────────────────────────── */
 
-    function NowPlayingOverlay() {
+    const MODE_ORDER = ['sequence', 'all', 'one', 'shuffle']
+    const MODE_ICON = { sequence: 'queue', all: 'repeat', one: 'repeatOne', shuffle: 'shuffle' }
+    const MODE_LABEL = { sequence: 'np.mode.sequence', all: 'np.mode.all', one: 'np.mode.one', shuffle: 'np.mode.shuffle' }
+
+    /** One button, four states — QQ-Music style cycling, Apple-style icons. */
+    function ModeButton({ mode }) {
+      const icon = MODE_ICON[mode] ?? 'repeat'
+      const label = t(MODE_LABEL[mode] ?? 'np.mode.all')
+      const cycle = () => {
+        const index = MODE_ORDER.indexOf(mode)
+        const next = MODE_ORDER[(index + 1) % MODE_ORDER.length]
+        guarded(command('player.mode', { mode: next }), label)
+      }
+      return h('button', {
+        type: 'button',
+        className: 'dshm-ib dshm-focusable',
+        'data-active': mode === 'sequence' ? undefined : 'true',
+        'aria-label': label,
+        'aria-live': 'polite',
+        title: label,
+        onClick: (event) => { event.stopPropagation(); cycle() },
+        onPointerDown: (event) => event.stopPropagation(),
+      }, h(Icon, { name: icon, size: 16 }))
+    }
+
+    /** Right-hand time: remaining, like Apple Music's miniplayer. */
+    function RemainingText({ getPlayer }) {
+      const ref = useRef(null)
+      useEffect(() => {
+        let frame = 0
+        let last = -1
+        const tick = () => {
+          const player = getPlayer()
+          const duration = player?.durationMs ?? 0
+          const remaining = Math.max(0, duration - estimateMs(player))
+          const value = Math.floor(remaining / 500)
+          if (ref.current !== null && value !== last) {
+            last = value
+            ref.current.textContent = `-${formatTime(value * 500)}`
+          }
+          frame = requestAnimationFrame(tick)
+        }
+        frame = requestAnimationFrame(tick)
+        return () => cancelAnimationFrame(frame)
+      }, [getPlayer])
+      return h('span', { ref }, '-0:00')
+    }
+
+    function NowPlayingPopover() {
       const open = useUi()
       const snap = useSession()
       const status = snap.status
       const player = status?.player ?? null
       const track = useTrack(player?.trackId ?? null, status)
+      const [closing, setClosing] = useState(false)
       const [view, setView] = useState('now')
-      const [showLyrics, setShowLyrics] = useState(false)
-      const [showSpec, setShowSpec] = useState(false)
-      const sheetRef = useRef(null)
+      const [panel, setPanel] = useState(null)
+      const [rect, setRect] = useState(null)
+      const wasOpen = useRef(false)
+      const panelRef = useRef(null)
+      const closingTimer = useRef(null)
       const latest = useRef(player)
       latest.current = player
       const getPlayer = useCallback(() => latest.current, [])
 
+      // Open / closing phases so the exit animation can play out.
       useEffect(() => {
-        if (!open) return undefined
-        const onKey = (event) => {
-          if (event.key === 'Escape') {
-            event.stopPropagation()
-            if (view !== 'now') setView('now')
-            else setNowPlaying(false)
-          }
+        if (closingTimer.current !== null) { clearTimeout(closingTimer.current); closingTimer.current = null }
+        if (open) {
+          wasOpen.current = true
+          setClosing(false)
+          return undefined
         }
-        document.addEventListener('keydown', onKey, true)
-        const previous = document.activeElement
-        sheetRef.current?.querySelector('[data-autofocus="true"]')?.focus?.()
+        if (!wasOpen.current) return undefined
+        setClosing(true)
+        closingTimer.current = setTimeout(() => {
+          closingTimer.current = null
+          setClosing(false)
+          wasOpen.current = false
+        }, 130)
         return () => {
-          document.removeEventListener('keydown', onKey, true)
-          previous?.focus?.()
+          if (closingTimer.current !== null) { clearTimeout(closingTimer.current); closingTimer.current = null }
         }
-      }, [open, view])
-
-      useEffect(() => {
-        if (!open) { setView('now'); setShowLyrics(false); setShowSpec(false) }
       }, [open])
 
-      if (!open) return null
+      const visible = open || closing
+
+      // Anchor: the mini player's own rect, re-measured on resize and scroll.
+      useEffect(() => {
+        if (!visible) return undefined
+        const measure = () => {
+          const node = miniAnchor.node
+          setRect(node !== null && node !== undefined ? node.getBoundingClientRect() : null)
+        }
+        measure()
+        window.addEventListener('resize', measure)
+        document.addEventListener('scroll', measure, true)
+        return () => {
+          window.removeEventListener('resize', measure)
+          document.removeEventListener('scroll', measure, true)
+        }
+      }, [visible])
+
+      // Dismiss: anywhere outside the panel that is not the mini player itself.
+      useEffect(() => {
+        if (!open) return undefined
+        const onPointerDown = (event) => {
+          if (panelRef.current?.contains(event.target)) return
+          if (miniAnchor.node?.contains?.(event.target)) return
+          setNowPlaying(false)
+        }
+        const onKey = (event) => {
+          if (event.key === 'Escape') { event.stopPropagation(); setNowPlaying(false) }
+        }
+        document.addEventListener('pointerdown', onPointerDown, true)
+        document.addEventListener('keydown', onKey, true)
+        return () => {
+          document.removeEventListener('pointerdown', onPointerDown, true)
+          document.removeEventListener('keydown', onKey, true)
+        }
+      }, [open])
+
+      // Focus in on open, back to where it was on close.
+      useEffect(() => {
+        if (!open) return undefined
+        const previous = document.activeElement
+        panelRef.current?.querySelector('[data-autofocus="true"]')?.focus?.()
+        return () => { try { previous?.focus?.() } catch { /* element gone */ } }
+      }, [open])
+
+      useEffect(() => { if (!open) { setView('now'); setPanel(null) } }, [open])
+
+      if (!visible) {
+        // Never return null: a null render deactivates the slot entry, and the
+        // overlay would never be mounted again (that is what made the panel
+        // unopenable). A zero-size anchor keeps the entry alive.
+        return h('div', {
+          className: 'dshm',
+          style: { position: 'fixed', left: 0, top: 0, width: 0, height: 0, pointerEvents: 'none' },
+          'aria-hidden': 'true',
+        })
+      }
+
+      const width = Math.min(340, Math.max(272, window.innerWidth - 16))
+      const anchorRight = rect !== null ? rect.right : window.innerWidth - 260
+      const anchorTop = rect !== null ? rect.top : window.innerHeight - 64
+      const left = Math.max(8, Math.min(anchorRight - width, window.innerWidth - width - 8))
+      const bottom = Math.max(8, window.innerHeight - (anchorTop - 8))
+      const maxHeight = Math.max(260, Math.min(520, window.innerHeight - bottom - 16))
 
       const playing = player !== null && player.playing === true && player.paused !== true
+      const mode = player?.mode ?? 'all'
       const close = () => setNowPlaying(false)
 
       return h('div', {
-        className: 'dshm dshm-backdrop',
-        onPointerDown: (event) => { if (event.target === event.currentTarget) close() },
-        role: 'presentation',
-      }, h('div', {
-        className: 'dshm-sheet',
+        ref: panelRef,
+        className: 'dshm dshm-pop',
+        'data-closing': closing ? 'true' : undefined,
         role: 'dialog',
-        'aria-modal': 'true',
-        'aria-label': t('np.title'),
-        ref: sheetRef,
+        'aria-modal': 'false',
+        'aria-label': view === 'queue' ? t('np.queue') : t('np.title'),
+        style: { left, width, bottom, maxHeight },
       },
-      h('div', { className: 'dshm-sheet-head' },
-        view === 'queue'
-          ? h(IconButton, { name: 'chevronLeft', label: t('lib.back'), onClick: () => setView('now') })
-          : h('span', { style: { width: 28 } }),
-        h('div', { className: 'dshm-sheet-title' }, view === 'queue' ? t('np.queue') : t('np.title')),
-        h(IconButton, { name: 'close', label: t('np.close'), onClick: close, autoFocus: true })),
+      h('div', { className: 'dshm-pop-head' },
+        h(IconButton, { name: 'chevronDown', label: t('np.collapse'), onClick: close, autoFocus: true }),
+        h('div', { className: 'dshm-pop-title' }, view === 'queue' ? t('np.queue') : t('np.title')),
+        h(IconButton, {
+          name: view === 'queue' ? 'note' : 'queue',
+          label: view === 'queue' ? t('np.title') : t('np.queue'),
+          active: view === 'queue',
+          onClick: () => setView(view === 'queue' ? 'now' : 'queue'),
+        })),
 
       view === 'queue'
         ? h(QueuePanel, { player, tracksVersion: status?.library?.tracks })
-        : h('div', { className: 'dshm-sheet-body' },
+        : h('div', { className: 'dshm-pop-body' },
           track === null
-            ? h('div', { className: 'dshm-empty' }, h('div', { className: 'dshm-empty-title' }, t('state.noTrack')))
+            ? h('div', { className: 'dshm-empty', style: { padding: '36px 8px' } },
+              h('div', { className: 'dshm-empty-title' }, t('state.noTrack')))
             : h(React.Fragment, null,
-              h('div', { className: 'dshm-np-art' }, h(Cover, { track, size: '100%', radius: 14 })),
-              h('div', { className: 'dshm-np-meta' },
-                h('div', { className: 'dshm-np-title', title: track.title }, track.title),
-                h('div', { className: 'dshm-np-sub', title: track.album },
-                  track.artist ?? t('spec.todo'))),
+              h('div', { className: 'dshm-pop-art' }, h(Cover, { track, size: '100%', radius: 12 })),
+              h('div', { className: 'dshm-pop-meta' },
+                h('div', { className: 'dshm-pop-name', title: track.title }, track.title),
+                h('div', { className: 'dshm-pop-sub', title: track.album }, track.artist ?? t('spec.todo'))),
 
-              h('div', { style: { marginTop: 14 } },
+              h('div', { style: { marginTop: 12 } },
                 h(ProgressBar, {
                   getPlayer,
                   variant: 'sheet',
                   onSeek: (ms) => guarded(command('player.seek', { ms }), t('np.seek')),
                 }),
-                h('div', { className: 'dshm-times' },
+                h('div', { className: 'dshm-pop-times' },
                   h(TimeText, { getPlayer }),
-                  h('span', null, formatTime(player?.durationMs ?? 0)))),
+                  h(RemainingText, { getPlayer }))),
 
-              h('div', { className: 'dshm-transport' },
-                h(IconButton, { name: 'prev', label: t('mini.prev'), size: 'lg', onClick: () => guarded(command('player.prev'), t('mini.prev')) }),
+              h('div', { className: 'dshm-pop-transport' },
+                h(IconButton, {
+                  name: 'prev', label: t('mini.prev'), size: 'lg',
+                  onClick: () => guarded(command('player.prev'), t('mini.prev')),
+                }),
                 h(IconButton, {
                   name: playing ? 'pause' : 'play',
                   label: playing ? t('mini.pause') : t('mini.play'),
                   size: 'xl',
                   onClick: () => guarded(command('player.toggle'), t('mini.play')),
                 }),
-                h(IconButton, { name: 'next', label: t('mini.next'), size: 'lg', onClick: () => guarded(command('player.next'), t('mini.next')) })),
+                h(IconButton, {
+                  name: 'next', label: t('mini.next'), size: 'lg',
+                  onClick: () => guarded(command('player.next'), t('mini.next')),
+                })),
 
               h('div', { className: 'dshm-rowline' },
-                h('div', { style: { display: 'flex', gap: 2 } },
-                  h(IconButton, {
-                    name: 'repeatOne', label: t('np.mode.one'), active: player?.mode === 'one', pressed: player?.mode === 'one',
-                    onClick: () => guarded(command('player.mode', { mode: 'one' }), t('np.mode.one')),
-                  }),
-                  h(IconButton, {
-                    name: 'repeat', label: t('np.mode.all'), active: player?.mode === 'all', pressed: player?.mode === 'all',
-                    onClick: () => guarded(command('player.mode', { mode: 'all' }), t('np.mode.all')),
-                  }),
-                  h(IconButton, {
-                    name: 'shuffle', label: t('np.mode.shuffle'), active: player?.mode === 'shuffle', pressed: player?.mode === 'shuffle',
-                    onClick: () => guarded(command('player.mode', { mode: 'shuffle' }), t('np.mode.shuffle')),
-                  })),
+                h(ModeButton, { mode }),
                 h('span', { className: 'dshm-grow' }),
                 h('div', { className: 'dshm-vol' },
                   h(IconButton, {
@@ -1172,24 +1308,26 @@ window.__ModuleLoader__.load({
 
               h('div', { className: 'dshm-chips' },
                 h('span', { className: 'dshm-chip' }, track.measuredSpec || track.ext.replace('.', '').toUpperCase()),
-                track.container ? h('span', { className: 'dshm-chip' }, String(track.container).toUpperCase()) : null,
-                player?.fade === false ? h('span', { className: 'dshm-chip' }, `${t('spec.fade')} off`) : null),
+                track.container ? h('span', { className: 'dshm-chip' }, String(track.container).toUpperCase()) : null),
 
-              showLyrics ? h(LyricsPanel, { trackId: track.id, getPlayer }) : null,
-              showSpec ? h(SpecPanel, { track, engine: status?.engine ?? null }) : null)),
+              panel === 'lyrics' ? h(LyricsPanel, { trackId: track.id, getPlayer }) : null,
+              panel === 'spec' ? h(SpecPanel, { track, engine: status?.engine ?? null }) : null)),
 
-      h('div', { className: 'dshm-foot' },
+      h('div', { className: 'dshm-pop-foot' },
         h('button', {
-          type: 'button', className: 'dshm-disclose dshm-focusable',
-          'aria-expanded': showLyrics, onClick: () => setShowLyrics((value) => !value),
+          type: 'button',
+          className: 'dshm-disclose dshm-focusable',
+          'aria-expanded': panel === 'lyrics',
+          onClick: () => setPanel(panel === 'lyrics' ? null : 'lyrics'),
         }, h(Icon, { name: 'note', size: 14 }), t('np.lyrics')),
         h('button', {
-          type: 'button', className: 'dshm-disclose dshm-focusable',
-          'aria-expanded': showSpec, onClick: () => setShowSpec((value) => !value),
+          type: 'button',
+          className: 'dshm-disclose dshm-focusable',
+          'aria-expanded': panel === 'spec',
+          onClick: () => setPanel(panel === 'spec' ? null : 'spec'),
         }, h(Icon, { name: 'disc', size: 14 }), t('np.details')),
         h('span', { className: 'dshm-grow' }),
-        h(IconButton, { name: 'queue', label: t('np.queue'), onClick: () => setView('queue') }),
-        h(IconButton, { name: 'library', label: t('np.library'), onClick: openLibraryPanel }))))
+        h(IconButton, { name: 'library', label: t('np.library'), onClick: openLibraryPanel })))
     }
 
     function QueuePanel({ player }) {
@@ -2185,7 +2323,11 @@ window.__ModuleLoader__.load({
 
         ctx.effect(() => {
           const open = () => {
-            try { ctx.layout.selectPanel('music') } catch { /* layout not ready */ }
+            try {
+              ctx.layout.selectPanel('music')
+            } catch (error) {
+              session.toast(`selectPanel: ${error?.message ?? String(error)}`)
+            }
           }
           window.addEventListener('dsh-music:open-library', open)
           return () => window.removeEventListener('dsh-music:open-library', open)
@@ -2228,7 +2370,7 @@ window.__ModuleLoader__.load({
           id: 'dsh-music-nowplaying',
           order: 55,
           inject: () => ({ t }),
-        }, NowPlayingOverlay))
+        }, NowPlayingPopover))
 
         ctx.slots.inject('settings.section', () => ctx.slots.register({
           name: 'settings.section',

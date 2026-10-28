@@ -114,3 +114,24 @@ test/                  node:test 单测
 ```powershell
 node scripts/playback-test.mjs     # 切歌/循环/自动推进/淡入淡出开关 端到端断言
 ```
+
+---
+
+## 八、v1.2 改版记录（按你的四条意见）
+
+| 意见 | 处理 |
+|---|---|
+| 1. 迷你播放器没融入 | 去掉卡片化：无边框、无底色、圆角 7px、内边距 6/8，与侧栏「插件」「自动化任务」行**同参数**；hover 用同一 `color-mix(label-primary 7%)`；封面 40→32，控制键 28→24。 |
+| 2. 弹窗点不开 | 根因：关闭时 `return null` 让 list 型 slot 把条目置为 `active:false` 并不再挂载（运行时查询 `shell.overlay` 证实）。改为**永不返回 null**，关闭时渲染零尺寸锚点。已实测「收起→重开」「进音乐库→重开」两条路径。 |
+| 3. 改成上方弹出 + 精简 | `shell.overlay` 里的作品改为**锚定在迷你播放器上方的非模态 popover**（宽 340、无遮罩、点外部/Esc 关闭、焦点进出、向上 8px 缩放入场 160ms）。内容按 Apple Music 卡的密度重排：封面 176 → 标题/艺术家 → 进度（右侧**剩余时间**）→ 传输 → 一行（模式按钮 + 音量）→ 规格 chips → 底部「歌词 / 队列 / 规格 / 音乐库」。左上角 chevron-down 收起。 |
+| 4. 进度条位置与语言 | 迷你条改为从**封面右缘**起（`left:49`）、距封面 8px、贴行底 3px；命中区 8px（不再抢走行点击）。popover 内 4px→hover 6px、12px 滑块、拖动时间气泡。**不做**缩略图/波形预览（需整库预分析）。 |
+| 播放模式 | 一个按钮循环 **顺序 → 列表循环 → 单曲循环 → 随机**（QQ 音乐式循环，Apple 式图标）。切换**不再重载当前曲**：host 只重排后续队列；`jumpTo` 的 `baseCursor` 改为加载前置位，并忽略加载中的 `playlist-pos`（修复切歌后游标错位）。新增 `sequence` 模式，播到队尾停止。 |
+| 收藏 | popover 里不放收藏（按要求），右键菜单保留。 |
+
+新增/更新的验证：
+
+```powershell
+node scripts/playback-test.mjs   # 现为 11 组：含「模式切换不动当前文件/位置」「sequence 到底停止」
+```
+
+实测结果：`ALL PLAYBACK CHECKS PASSED`。
