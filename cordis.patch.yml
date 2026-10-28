@@ -1,0 +1,8 @@
+- insert:
+    - id: dsh-music
+      name: '@local/dsh-music'
+      inject: [webServer]
+      config:
+        engine: auto
+        exclusiveAudio: false
+        defaultVolume: 100
