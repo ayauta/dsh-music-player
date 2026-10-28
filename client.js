@@ -398,7 +398,7 @@ window.__ModuleLoader__.load({
   display: grid; place-items: center; flex: none; }
 .dshm-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .dshm-cover-ph { width: 100%; height: 100%; display: grid; place-items: center;
-  color: var(--dsw-alias-label-secondary); opacity: .40;
+  color: var(--dsw-alias-label-secondary); opacity: .32;
   background: linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-label-primary) 5%, var(--dsw-alias-bg-layer-2)) 0%,
     var(--dsw-alias-bg-layer-2) 100%); }
 
@@ -754,12 +754,14 @@ window.__ModuleLoader__.load({
           : null
       useEffect(() => { setFailed(false) }, [source])
       const showImage = source !== null && !failed
+      // `size` may be a percentage for fluid covers; the glyph needs a number.
+      const glyph = typeof size === 'number' ? Math.max(12, Math.round(size * 0.28)) : 40
       return h('div', {
         className: 'dshm-cover',
         style: { width: size, height: size, borderRadius: radius },
       }, showImage
         ? h('img', { src: source, alt: '', loading: 'lazy', decoding: 'async', onError: () => setFailed(true) })
-        : h('div', { className: 'dshm-cover-ph' }, h(Icon, { name: 'note', size: Math.max(12, Math.round(size * 0.36)) })))
+        : h('div', { className: 'dshm-cover-ph' }, h(Icon, { name: 'note', size: glyph })))
     }
 
     /**
@@ -1641,7 +1643,7 @@ window.__ModuleLoader__.load({
               size: '100%',
               radius: 10,
             })),
-            h('div', { className: 'dshm-card-title', title: group.title }, group.title),
+            h('div', { className: 'dshm-card-title', title: group.fullTitle ?? group.title }, group.title),
             h('div', { className: 'dshm-card-sub' },
               [view === 'folders' ? group.parentTitle : group.subtitle,
                 `${group.trackCount} ${t('lib.tracks')}`].filter(Boolean).join(' · ')))))

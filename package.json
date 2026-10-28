@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-music",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "Native-feeling local hi-res music player for the DeepSeek Harness: mpv engine, library index, mini player and Now Playing.",
