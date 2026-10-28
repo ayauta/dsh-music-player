@@ -6,6 +6,7 @@ param(
   [switch]$Double,
   [switch]$Right,
   [switch]$Move,
+  [ValidateSet('click', 'down', 'up')][string]$Action = 'click',
   [string]$TitleMatch = 'DeepSeek Harness'
 )
 
@@ -44,6 +45,17 @@ $down = 0x0002
 $up = 0x0004
 $rightDown = 0x0008
 $rightUp = 0x0010
+
+if ($Action -eq 'down') {
+  [Win32Click]::mouse_event($down, 0, 0, 0, [UIntPtr]::Zero)
+  "mouse down at $absX,$absY"
+  exit 0
+}
+if ($Action -eq 'up') {
+  [Win32Click]::mouse_event($up, 0, 0, 0, [UIntPtr]::Zero)
+  "mouse up at $absX,$absY"
+  exit 0
+}
 
 if ($Right) {
   [Win32Click]::mouse_event($rightDown, 0, 0, 0, [UIntPtr]::Zero)
