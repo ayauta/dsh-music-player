@@ -135,3 +135,42 @@ node scripts/playback-test.mjs   # 现为 11 组：含「模式切换不动当�
 ```
 
 实测结果：`ALL PLAYBACK CHECKS PASSED`。
+
+---
+
+## 九、v1.3 改版记录（"点不开"两次的完整结论 + 照 Apple 重排）
+
+### 两次"点不开"的根因（不同）
+
+1. **第一次**（v1.1）：面板挂在 `shell.overlay`，关闭时 `return null`。list 型 slot 会把"渲染空"的条目置 `active:false` 且不再挂载 —— 运行时查询 `shell.overlay` 拿到 `active:false` 作为证据。
+2. **第二次**（v1.2 重构时，我的回归）：我在替换 popover 代码时漏掉了 `RemainingText` 函数，组件在渲染时抛 `ReferenceError`，slot 把该 cell 判为 inactive。证据：`sidebar.footer.action` 里 `dsh-music` 显示 `active:false`，迷你播放器整行消失。
+
+### 结构性修复（让它不可能再发生）
+
+- **面板不再占用任何 slot**：`MiniPopover` 现在是迷你播放器这个 sidebar 行的子组件，`position: fixed` 自己算锚点。slot cell 永远只渲染一行，不存在"渲染空被停用"的路径。
+- **每个 cell 都套 ErrorBoundary**：播放器、音乐库、设置三处；子组件抛异常时保留可用的降级 UI，而不是整格变白 + 永久失活。
+- 关闭时仍然渲染真实内容（`MiniPopover` 返回 null 只是普通的 React 子树，与外层 slot 无关）。
+
+### 闪烁根因与修复
+
+原来 popover 的位置在 `useEffect` 里测量，首帧用的是兜底坐标，第二帧才跳到正确位置（= 可见的抖动）。现在**在 render 期间**用 `wrapRef.current.getBoundingClientRect()` 计算，首帧即到位；关闭用 120ms 反向动画，位置不变。
+
+### 照 Apple Music 重排
+
+```
+[⌄]            正在播放            [⋯]
+        ┌────────────────┐
+        │   封面（满宽）  │
+        └────────────────┘
+  形神合一
+  兰音Reine
+  ──────●────────────
+  2:21            -0:44
+  ⤨   ⏮   ▶   ⏭   ⤩
+```
+- 传输行照 Apple：**左随机开关、右循环切换**（循环键仍是一个键循环 顺序/列表/单曲），中间三键居中；
+- **去掉**：歌词入口、规格 chips、音量条、底部工具行（信息太冗长的部分）；
+- **保留**：`⋯` 菜单里的 队列 / 音乐库 / 文件与规格（就地展开）；
+- 尺寸：面板宽 300（原 340），封面取满宽（约 264px，原 176），整体更矮更匀称；
+- 进度条滑块**常显**（Apple 的做法），右端显示**剩余时间**；
+- 模式按钮激活只改字形颜色，不再画一个灰底方块。

@@ -459,29 +459,33 @@ window.__ModuleLoader__.load({
   opacity: 0; transition: opacity 110ms var(--dshm-ease); pointer-events: none; }
 .dshm-progress[data-dragging="true"] .dshm-progress-bubble { opacity: 1; }
 
-/* now playing popover */
-.dshm-pop { position: fixed; z-index: 75; display: flex; flex-direction: column;
+/* now playing popover — Apple Music density: art, name, progress, one control row */
+.dshm-mini-wrap { position: relative; }
+.dshm-pop { position: fixed; z-index: 80; display: flex; flex-direction: column;
   background: var(--dsw-alias-bg-overlay); border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 14px; box-shadow: 0 22px 60px rgba(0,0,0,.30); overflow: hidden;
+  border-radius: 14px; box-shadow: 0 20px 48px rgba(0,0,0,.26); overflow: hidden;
   transform-origin: bottom left; animation: dshm-pop-in 160ms var(--dshm-ease); pointer-events: auto; }
 .dshm-pop[data-closing="true"] { animation: dshm-pop-out 120ms var(--dshm-ease) forwards; }
 .dshm-pop-head { display: flex; align-items: center; gap: 4px; padding: 8px 8px 0; flex: none; }
 .dshm-pop-title { flex: 1 1 auto; text-align: center; font-size: var(--dshm-fs-caption); font-weight: 600;
   letter-spacing: .07em; text-transform: uppercase; color: var(--dsw-alias-label-secondary); }
-.dshm-pop-body { padding: 4px 16px 12px; overflow: auto; }
-.dshm-pop-art { width: 176px; height: 176px; margin: 2px auto 0; border-radius: 12px; overflow: hidden;
-  box-shadow: 0 8px 26px rgba(0,0,0,.18); }
-.dshm-pop-meta { padding: 12px 2px 2px; min-width: 0; }
+.dshm-pop-body { padding: 2px 18px 14px; overflow: auto; }
+.dshm-pop-art { width: 100%; aspect-ratio: 1 / 1; max-height: 46vh; margin: 2px auto 0; border-radius: 12px;
+  overflow: hidden; box-shadow: 0 10px 28px rgba(0,0,0,.20); }
+.dshm-pop-meta { padding: 12px 2px 0; min-width: 0; }
 .dshm-pop-name { font-size: 17px; font-weight: 600; letter-spacing: -.01em; line-height: 1.25;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dshm-pop-sub { font-size: 12.5px; color: var(--dsw-alias-label-secondary); margin-top: 2px;
+.dshm-pop-sub { font-size: 13px; color: var(--dsw-alias-label-secondary); margin-top: 2px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dshm-pop-times { display: flex; justify-content: space-between; align-items: baseline; margin-top: 3px;
+.dshm-pop-progress { margin-top: 12px; }
+.dshm-pop .dshm-progress-thumb { opacity: 1; }
+.dshm-pop-times { display: flex; justify-content: space-between; align-items: baseline; margin-top: 4px;
   font-size: var(--dshm-fs-caption); color: var(--dsw-alias-label-secondary); }
-.dshm-pop-transport { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 2px 0; }
-.dshm-sheet-body { padding: 4px 12px 12px; overflow: auto; }
-.dshm-pop-foot { display: flex; align-items: center; gap: 2px; padding: 4px 8px 6px; flex: none;
+.dshm-pop-transport { display: flex; align-items: center; justify-content: space-between; gap: 2px; padding: 10px 2px 2px; }
+.dshm-pop-transport .dshm-ib[data-active="true"] { background: transparent; color: var(--dsw-alias-label-primary); }
+.dshm-pop-more { display: flex; flex-direction: column; gap: 1px; padding-top: 10px; margin-top: 10px;
   border-top: 1px solid var(--dsw-alias-border-l1); }
+.dshm-sheet-body { padding: 4px 0 0; overflow: auto; }
 .dshm-rowline { display: flex; align-items: center; gap: 6px; padding-top: 6px; }
 .dshm-grow { flex: 1 1 auto; }
 .dshm-vol { display: flex; align-items: center; gap: 8px; width: 124px; flex: none; }
@@ -493,10 +497,10 @@ window.__ModuleLoader__.load({
   border: 1px solid var(--dsw-alias-border-l1); color: var(--dsw-alias-label-secondary); white-space: nowrap; }
 .dshm-disclose { border: 0; background: transparent; color: var(--dsw-alias-label-secondary);
   font-size: var(--dshm-fs-sub); font-weight: 500; padding: 6px 8px; border-radius: 7px; cursor: pointer;
-  display: inline-flex; align-items: center; gap: 5px; }
+  display: inline-flex; align-items: center; gap: 6px; text-align: left; }
 .dshm-disclose:hover { color: var(--dsw-alias-label-primary);
   background: color-mix(in srgb, var(--dsw-alias-label-primary) 7%, transparent); }
-.dshm-kv { display: grid; grid-template-columns: 92px 1fr; gap: 5px 10px; font-size: var(--dshm-fs-sub); padding: 8px 2px 2px; }
+.dshm-kv { display: grid; grid-template-columns: 88px 1fr; gap: 5px 10px; font-size: var(--dshm-fs-sub); padding: 10px 2px 2px; }
 .dshm-kv dt { color: var(--dsw-alias-label-secondary); }
 .dshm-kv dd { margin: 0; overflow-wrap: anywhere; }
 .dshm-note { font-size: var(--dshm-fs-sub); color: var(--dsw-alias-label-secondary); line-height: 1.6; padding: 6px 2px 0; }
@@ -737,6 +741,34 @@ window.__ModuleLoader__.load({
     const cx = (...values) => values.filter((v) => typeof v === 'string' && v !== '').join(' ')
 
     /* ─────────────────────────── controls ──────────────────────────────── */
+
+    /**
+     * A throwing child must never blank a slot cell: the shell deactivates an
+     * entry that fails to render and never mounts it again, which is how the
+     * player became unopenable twice. The boundary keeps the cell alive and
+     * leaves a usable fallback.
+     */
+    class ErrorBoundary extends React.Component {
+      constructor(props) {
+        super(props)
+        this.state = { failed: false }
+      }
+
+      static getDerivedStateFromError() { return { failed: true } }
+
+      componentDidCatch(error) {
+        try { console.error('[dsh-music] render failed', error) } catch { /* no console */ }
+      }
+
+      render() {
+        if (!this.state.failed) return this.props.children
+        return this.props.fallback ?? null
+      }
+    }
+
+    const guardedCell = (Component, fallback) => function GuardedCell(props) {
+      return h(ErrorBoundary, { fallback }, h(Component, props))
+    }
 
     function IconButton({ name, label, onClick, disabled, active, size = 'sm', pressed, autoFocus }) {
       return h('button', {
@@ -995,28 +1027,28 @@ window.__ModuleLoader__.load({
 
     /* ────────────────────────── mini player ────────────────────────────── */
 
-    /** The popover measures this node to anchor itself above the mini player. */
-    const miniAnchor = { node: null }
-
+    /**
+     * The player surface lives inside the sidebar row itself, not in
+     * `shell.overlay`: a slot entry that renders "nothing" gets deactivated by
+     * the shell and never comes back, which is exactly the "can't open it any
+     * more" failure we hit twice. A fixed-position child of the row cannot be
+     * deactivated, cannot be clipped by slot collapse, and keeps its anchor by
+     * construction.
+     */
     function MiniPlayer(props) {
       const snap = useSession()
       const status = snap.status
       const player = status?.player ?? null
       const wide = props?.wide !== false
       const track = useTrack(player?.trackId ?? null, status)
+      const [open, setOpen] = useState(false)
+      const wrapRef = useRef(null)
       const latest = useRef(player)
       latest.current = player
       const getPlayer = useCallback(() => latest.current, [])
-      const rootRef = useRef(null)
-
-      useEffect(() => {
-        miniAnchor.node = rootRef.current
-        return () => { if (miniAnchor.node === rootRef.current) miniAnchor.node = null }
-      }, [track === null, wide])
 
       if (track === null) {
         return h('button', {
-          ref: rootRef,
           type: 'button',
           className: 'dshm dshm-mini dshm-focusable',
           'data-collapsed': wide ? undefined : 'true',
@@ -1032,78 +1064,102 @@ window.__ModuleLoader__.load({
       const playing = player.playing === true && player.paused !== true
       const showProgress = wide && (status?.prefs?.miniProgress !== false)
       const stop = (event) => event.stopPropagation()
+      const toggle = () => setOpen((value) => !value)
 
-      return h('div', {
-        ref: rootRef,
-        className: 'dshm dshm-mini',
-        'data-collapsed': wide ? undefined : 'true',
-        role: 'group',
-        'aria-label': `${track.title} — ${t('mini.open')}`,
-        onClick: () => setNowPlaying(!uiState.nowPlaying),
-      },
-      h('div', { className: 'dshm-mini-row' },
-        h('button', {
-          type: 'button',
-          className: 'dshm-mini-cover dshm-focusable',
-          'aria-label': t('mini.open'),
-          title: t('mini.open'),
-          onClick: (event) => { event.stopPropagation(); setNowPlaying(!uiState.nowPlaying) },
-        }, h(Cover, { track, size: wide ? 32 : 30, radius: 6 })),
-
-        wide ? h('button', {
-          type: 'button',
-          className: 'dshm-mini-info dshm-focusable',
-          onClick: (event) => { event.stopPropagation(); setNowPlaying(!uiState.nowPlaying) },
+      return h('div', { ref: wrapRef, className: 'dshm dshm-mini-wrap' },
+        h('div', {
+          className: 'dshm-mini',
+          'data-collapsed': wide ? undefined : 'true',
+          role: 'group',
           'aria-label': `${track.title} — ${t('mini.open')}`,
+          onClick: toggle,
         },
-        h('span', { className: 'dshm-mini-title' }, track.title),
-        h('span', { className: 'dshm-mini-sub' }, track.artist ?? t('spec.todo'))) : null,
+        h('div', { className: 'dshm-mini-row' },
+          h('button', {
+            type: 'button',
+            className: 'dshm-mini-cover dshm-focusable',
+            'aria-label': t('mini.open'),
+            'aria-expanded': open ? 'true' : 'false',
+            title: t('mini.open'),
+            onClick: (event) => { event.stopPropagation(); toggle() },
+          }, h(Cover, { track, size: wide ? 32 : 30, radius: 6 })),
 
-        wide ? h('div', { className: 'dshm-mini-controls' },
-          h(IconButton, { name: 'prev', label: t('mini.prev'), onClick: () => guarded(command('player.prev'), t('mini.prev')) }),
-          h(IconButton, {
-            name: playing ? 'pause' : 'play',
-            label: playing ? t('mini.pause') : t('mini.play'),
-            onClick: () => guarded(command('player.toggle'), t('mini.play')),
-          }),
-          h(IconButton, { name: 'next', label: t('mini.next'), onClick: () => guarded(command('player.next'), t('mini.next')) })) : null),
+          wide ? h('button', {
+            type: 'button',
+            className: 'dshm-mini-info dshm-focusable',
+            onClick: (event) => { event.stopPropagation(); toggle() },
+            'aria-label': `${track.title} — ${t('mini.open')}`,
+          },
+          h('span', { className: 'dshm-mini-title' }, track.title),
+          h('span', { className: 'dshm-mini-sub' }, track.artist ?? t('spec.todo'))) : null,
 
-      showProgress ? h('div', {
-        className: 'dshm-mini-progress',
-        onClick: stop,
-        onPointerDown: stop,
-      }, h(ProgressBar, {
-        getPlayer,
-        variant: 'mini',
-        onSeek: (ms) => guarded(command('player.seek', { ms }), t('np.seek')),
-      })) : null)
+          wide ? h('div', { className: 'dshm-mini-controls' },
+            h(IconButton, { name: 'prev', label: t('mini.prev'), onClick: () => guarded(command('player.prev'), t('mini.prev')) }),
+            h(IconButton, {
+              name: playing ? 'pause' : 'play',
+              label: playing ? t('mini.pause') : t('mini.play'),
+              onClick: () => guarded(command('player.toggle'), t('mini.play')),
+            }),
+            h(IconButton, { name: 'next', label: t('mini.next'), onClick: () => guarded(command('player.next'), t('mini.next')) })) : null),
+
+        showProgress ? h('div', { className: 'dshm-mini-progress', onClick: stop, onPointerDown: stop },
+          h(ProgressBar, {
+            getPlayer,
+            variant: 'mini',
+            onSeek: (ms) => guarded(command('player.seek', { ms }), t('np.seek')),
+          })) : null),
+
+        h(MiniPopover, {
+          open,
+          wrapRef,
+          track,
+          player,
+          status,
+          getPlayer,
+          onClose: () => setOpen(false),
+        }))
     }
 
     /* ────────────────────────── now playing ────────────────────────────── */
 
-    const MODE_ORDER = ['sequence', 'all', 'one', 'shuffle']
-    const MODE_ICON = { sequence: 'queue', all: 'repeat', one: 'repeatOne', shuffle: 'shuffle' }
-    const MODE_LABEL = { sequence: 'np.mode.sequence', all: 'np.mode.all', one: 'np.mode.one', shuffle: 'np.mode.shuffle' }
+    const MODE_ORDER = ['sequence', 'all', 'one']
+    const MODE_ICON = { sequence: 'queue', all: 'repeat', one: 'repeatOne' }
+    const MODE_LABEL = { sequence: 'np.mode.sequence', all: 'np.mode.all', one: 'np.mode.one' }
 
-    /** One button, four states — QQ-Music style cycling, Apple-style icons. */
-    function ModeButton({ mode }) {
-      const icon = MODE_ICON[mode] ?? 'repeat'
-      const label = t(MODE_LABEL[mode] ?? 'np.mode.all')
-      const cycle = () => {
-        const index = MODE_ORDER.indexOf(mode)
-        const next = MODE_ORDER[(index + 1) % MODE_ORDER.length]
-        guarded(command('player.mode', { mode: next }), label)
-      }
+    /** Shuffle toggle — the left slot of Apple Music's transport row. */
+    function ShuffleButton({ mode }) {
+      const on = mode === 'shuffle'
       return h('button', {
         type: 'button',
         className: 'dshm-ib dshm-focusable',
-        'data-active': mode === 'sequence' ? undefined : 'true',
+        'data-active': on ? 'true' : undefined,
+        'aria-pressed': on ? 'true' : 'false',
+        'aria-label': t('np.mode.shuffle'),
+        title: t('np.mode.shuffle'),
+        onClick: (event) => {
+          event.stopPropagation()
+          guarded(command('player.mode', { mode: on ? 'all' : 'shuffle' }), t('np.mode.shuffle'))
+        },
+      }, h(Icon, { name: 'shuffle', size: 17 }))
+    }
+
+    /** Repeat cycles 顺序 → 列表 → 单曲; the right slot of the transport row. */
+    function RepeatButton({ mode }) {
+      const current = mode === 'shuffle' ? 'all' : mode
+      const label = t(MODE_LABEL[current] ?? 'np.mode.all')
+      return h('button', {
+        type: 'button',
+        className: 'dshm-ib dshm-focusable',
+        'data-active': current === 'sequence' ? undefined : 'true',
         'aria-label': label,
-        'aria-live': 'polite',
         title: label,
-        onClick: (event) => { event.stopPropagation(); cycle() },
-        onPointerDown: (event) => event.stopPropagation(),
-      }, h(Icon, { name: icon, size: 16 }))
+        onClick: (event) => {
+          event.stopPropagation()
+          const index = MODE_ORDER.indexOf(current)
+          const next = MODE_ORDER[(index + 1) % MODE_ORDER.length]
+          guarded(command('player.mode', { mode: next }), label)
+        },
+      }, h(Icon, { name: MODE_ICON[current] ?? 'repeat', size: 17 }))
     }
 
     /** Right-hand time: remaining, like Apple Music's miniplayer. */
@@ -1129,31 +1185,16 @@ window.__ModuleLoader__.load({
       return h('span', { ref }, '-0:00')
     }
 
-    function NowPlayingPopover() {
-      const open = useUi()
-      const snap = useSession()
-      const status = snap.status
-      const player = status?.player ?? null
-      const track = useTrack(player?.trackId ?? null, status)
+    function MiniPopover({ open, wrapRef, track, player, status, getPlayer, onClose }) {
       const [closing, setClosing] = useState(false)
-      const [view, setView] = useState('now')
       const [panel, setPanel] = useState(null)
-      const [rect, setRect] = useState(null)
-      const wasOpen = useRef(false)
       const panelRef = useRef(null)
+      const wasOpen = useRef(false)
       const closingTimer = useRef(null)
-      const latest = useRef(player)
-      latest.current = player
-      const getPlayer = useCallback(() => latest.current, [])
 
-      // Open / closing phases so the exit animation can play out.
       useEffect(() => {
         if (closingTimer.current !== null) { clearTimeout(closingTimer.current); closingTimer.current = null }
-        if (open) {
-          wasOpen.current = true
-          setClosing(false)
-          return undefined
-        }
+        if (open) { wasOpen.current = true; setClosing(false); return undefined }
         if (!wasOpen.current) return undefined
         setClosing(true)
         closingTimer.current = setTimeout(() => {
@@ -1168,32 +1209,19 @@ window.__ModuleLoader__.load({
 
       const visible = open || closing
 
-      // Anchor: the mini player's own rect, re-measured on resize and scroll.
-      useEffect(() => {
-        if (!visible) return undefined
-        const measure = () => {
-          const node = miniAnchor.node
-          setRect(node !== null && node !== undefined ? node.getBoundingClientRect() : null)
-        }
-        measure()
-        window.addEventListener('resize', measure)
-        document.addEventListener('scroll', measure, true)
-        return () => {
-          window.removeEventListener('resize', measure)
-          document.removeEventListener('scroll', measure, true)
-        }
-      }, [visible])
-
-      // Dismiss: anywhere outside the panel that is not the mini player itself.
+      // Dismiss on outside press, but not when the press is the mini row itself
+      // (that click is the toggle).
       useEffect(() => {
         if (!open) return undefined
         const onPointerDown = (event) => {
           if (panelRef.current?.contains(event.target)) return
-          if (miniAnchor.node?.contains?.(event.target)) return
-          setNowPlaying(false)
+          if (wrapRef.current?.contains?.(event.target)) return
+          onClose()
         }
         const onKey = (event) => {
-          if (event.key === 'Escape') { event.stopPropagation(); setNowPlaying(false) }
+          if (event.key !== 'Escape') return
+          event.stopPropagation()
+          onClose()
         }
         document.addEventListener('pointerdown', onPointerDown, true)
         document.addEventListener('keydown', onKey, true)
@@ -1201,9 +1229,8 @@ window.__ModuleLoader__.load({
           document.removeEventListener('pointerdown', onPointerDown, true)
           document.removeEventListener('keydown', onKey, true)
         }
-      }, [open])
+      }, [open, onClose, wrapRef])
 
-      // Focus in on open, back to where it was on close.
       useEffect(() => {
         if (!open) return undefined
         const previous = document.activeElement
@@ -1211,29 +1238,22 @@ window.__ModuleLoader__.load({
         return () => { try { previous?.focus?.() } catch { /* element gone */ } }
       }, [open])
 
-      useEffect(() => { if (!open) { setView('now'); setPanel(null) } }, [open])
+      useEffect(() => { if (!open) setPanel(null) }, [open])
 
-      if (!visible) {
-        // Never return null: a null render deactivates the slot entry, and the
-        // overlay would never be mounted again (that is what made the panel
-        // unopenable). A zero-size anchor keeps the entry alive.
-        return h('div', {
-          className: 'dshm',
-          style: { position: 'fixed', left: 0, top: 0, width: 0, height: 0, pointerEvents: 'none' },
-          'aria-hidden': 'true',
-        })
-      }
+      if (!visible) return null
 
-      const width = Math.min(340, Math.max(272, window.innerWidth - 16))
+      // Measured during render so the very first paint is already in place —
+      // measuring in an effect made the panel jump on open (the "flicker").
+      const rect = wrapRef.current?.getBoundingClientRect?.() ?? null
+      const width = Math.min(300, Math.max(256, window.innerWidth - 24))
       const anchorRight = rect !== null ? rect.right : window.innerWidth - 260
       const anchorTop = rect !== null ? rect.top : window.innerHeight - 64
       const left = Math.max(8, Math.min(anchorRight - width, window.innerWidth - width - 8))
       const bottom = Math.max(8, window.innerHeight - (anchorTop - 8))
-      const maxHeight = Math.max(260, Math.min(520, window.innerHeight - bottom - 16))
+      const maxHeight = Math.max(240, window.innerHeight - bottom - 12)
 
       const playing = player !== null && player.playing === true && player.paused !== true
       const mode = player?.mode ?? 'all'
-      const close = () => setNowPlaying(false)
 
       return h('div', {
         ref: panelRef,
@@ -1241,93 +1261,70 @@ window.__ModuleLoader__.load({
         'data-closing': closing ? 'true' : undefined,
         role: 'dialog',
         'aria-modal': 'false',
-        'aria-label': view === 'queue' ? t('np.queue') : t('np.title'),
+        'aria-label': t('np.title'),
         style: { left, width, bottom, maxHeight },
+        onClick: (event) => event.stopPropagation(),
       },
       h('div', { className: 'dshm-pop-head' },
-        h(IconButton, { name: 'chevronDown', label: t('np.collapse'), onClick: close, autoFocus: true }),
-        h('div', { className: 'dshm-pop-title' }, view === 'queue' ? t('np.queue') : t('np.title')),
-        h(IconButton, {
-          name: view === 'queue' ? 'note' : 'queue',
-          label: view === 'queue' ? t('np.title') : t('np.queue'),
-          active: view === 'queue',
-          onClick: () => setView(view === 'queue' ? 'now' : 'queue'),
-        })),
-
-      view === 'queue'
-        ? h(QueuePanel, { player, tracksVersion: status?.library?.tracks })
-        : h('div', { className: 'dshm-pop-body' },
-          track === null
-            ? h('div', { className: 'dshm-empty', style: { padding: '36px 8px' } },
-              h('div', { className: 'dshm-empty-title' }, t('state.noTrack')))
-            : h(React.Fragment, null,
-              h('div', { className: 'dshm-pop-art' }, h(Cover, { track, size: '100%', radius: 12 })),
-              h('div', { className: 'dshm-pop-meta' },
-                h('div', { className: 'dshm-pop-name', title: track.title }, track.title),
-                h('div', { className: 'dshm-pop-sub', title: track.album }, track.artist ?? t('spec.todo'))),
-
-              h('div', { style: { marginTop: 12 } },
-                h(ProgressBar, {
-                  getPlayer,
-                  variant: 'sheet',
-                  onSeek: (ms) => guarded(command('player.seek', { ms }), t('np.seek')),
-                }),
-                h('div', { className: 'dshm-pop-times' },
-                  h(TimeText, { getPlayer }),
-                  h(RemainingText, { getPlayer }))),
-
-              h('div', { className: 'dshm-pop-transport' },
-                h(IconButton, {
-                  name: 'prev', label: t('mini.prev'), size: 'lg',
-                  onClick: () => guarded(command('player.prev'), t('mini.prev')),
-                }),
-                h(IconButton, {
-                  name: playing ? 'pause' : 'play',
-                  label: playing ? t('mini.pause') : t('mini.play'),
-                  size: 'xl',
-                  onClick: () => guarded(command('player.toggle'), t('mini.play')),
-                }),
-                h(IconButton, {
-                  name: 'next', label: t('mini.next'), size: 'lg',
-                  onClick: () => guarded(command('player.next'), t('mini.next')),
-                })),
-
-              h('div', { className: 'dshm-rowline' },
-                h(ModeButton, { mode }),
-                h('span', { className: 'dshm-grow' }),
-                h('div', { className: 'dshm-vol' },
-                  h(IconButton, {
-                    name: player?.muted ? 'mute' : 'volume',
-                    label: player?.muted ? t('np.unmute') : t('np.mute'),
-                    onClick: () => guarded(command('player.mute', { value: !player?.muted }), t('np.mute')),
-                  }),
-                  h(VolumeBar, {
-                    value: player?.volume ?? 100,
-                    onChange: (value) => guarded(command('player.volume', { value }), t('np.volume')),
-                  }))),
-
-              h('div', { className: 'dshm-chips' },
-                h('span', { className: 'dshm-chip' }, track.measuredSpec || track.ext.replace('.', '').toUpperCase()),
-                track.container ? h('span', { className: 'dshm-chip' }, String(track.container).toUpperCase()) : null),
-
-              panel === 'lyrics' ? h(LyricsPanel, { trackId: track.id, getPlayer }) : null,
-              panel === 'spec' ? h(SpecPanel, { track, engine: status?.engine ?? null }) : null)),
-
-      h('div', { className: 'dshm-pop-foot' },
+        h(IconButton, { name: 'chevronDown', label: t('np.collapse'), onClick: onClose, autoFocus: true }),
+        h('div', { className: 'dshm-pop-title' }, t('np.title')),
         h('button', {
           type: 'button',
-          className: 'dshm-disclose dshm-focusable',
-          'aria-expanded': panel === 'lyrics',
-          onClick: () => setPanel(panel === 'lyrics' ? null : 'lyrics'),
-        }, h(Icon, { name: 'note', size: 14 }), t('np.lyrics')),
-        h('button', {
-          type: 'button',
-          className: 'dshm-disclose dshm-focusable',
-          'aria-expanded': panel === 'spec',
-          onClick: () => setPanel(panel === 'spec' ? null : 'spec'),
-        }, h(Icon, { name: 'disc', size: 14 }), t('np.details')),
-        h('span', { className: 'dshm-grow' }),
-        h(IconButton, { name: 'library', label: t('np.library'), onClick: openLibraryPanel })))
+          className: 'dshm-ib dshm-focusable',
+          'aria-label': t('common.more'),
+          title: t('common.more'),
+          'aria-expanded': panel !== null ? 'true' : 'false',
+          onClick: (event) => { event.stopPropagation(); setPanel(panel === null ? 'more' : null) },
+        }, h(Icon, { name: 'more', size: 16 }))),
+
+      h('div', { className: 'dshm-pop-body' },
+        h('div', { className: 'dshm-pop-art' }, h(Cover, { track, size: '100%', radius: 12 })),
+        h('div', { className: 'dshm-pop-meta' },
+          h('div', { className: 'dshm-pop-name', title: track.title }, track.title),
+          h('div', { className: 'dshm-pop-sub', title: track.album }, track.artist ?? t('spec.todo'))),
+
+        h('div', { className: 'dshm-pop-progress' },
+          h(ProgressBar, {
+            getPlayer,
+            variant: 'sheet',
+            onSeek: (ms) => guarded(command('player.seek', { ms }), t('np.seek')),
+          }),
+          h('div', { className: 'dshm-pop-times' },
+            h(TimeText, { getPlayer }),
+            h(RemainingText, { getPlayer }))),
+
+        h('div', { className: 'dshm-pop-transport' },
+          h(ShuffleButton, { mode }),
+          h(IconButton, {
+            name: 'prev', label: t('mini.prev'), size: 'lg',
+            onClick: () => guarded(command('player.prev'), t('mini.prev')),
+          }),
+          h(IconButton, {
+            name: playing ? 'pause' : 'play',
+            label: playing ? t('mini.pause') : t('mini.play'),
+            size: 'xl',
+            onClick: () => guarded(command('player.toggle'), t('mini.play')),
+          }),
+          h(IconButton, {
+            name: 'next', label: t('mini.next'), size: 'lg',
+            onClick: () => guarded(command('player.next'), t('mini.next')),
+          }),
+          h(RepeatButton, { mode })),
+
+        panel === 'more' ? h('div', { className: 'dshm-pop-more' },
+          h('button', { type: 'button', className: 'dshm-disclose dshm-focusable', onClick: () => setPanel('queue') },
+            h(Icon, { name: 'queue', size: 15 }), t('np.queue')),
+          h('button', {
+            type: 'button', className: 'dshm-disclose dshm-focusable',
+            onClick: () => { onClose(); openLibraryPanel() },
+          }, h(Icon, { name: 'library', size: 15 }), t('np.library')),
+          h('button', {
+            type: 'button', className: 'dshm-disclose dshm-focusable',
+            onClick: () => setPanel(panel === 'spec' ? null : 'spec'),
+          }, h(Icon, { name: 'disc', size: 15 }), t('np.details'))) : null,
+
+        panel === 'spec' ? h(SpecPanel, { track, engine: status?.engine ?? null }) : null,
+        panel === 'queue' ? h(QueuePanel, { player, tracksVersion: status?.library?.tracks }) : null))
     }
 
     function QueuePanel({ player }) {
@@ -2349,7 +2346,7 @@ window.__ModuleLoader__.load({
           order: 10,
           label: t('panel.label'),
           inject: () => ({ t }),
-        }, MiniPlayer))
+        }, guardedCell(MiniPlayer, h('button', { className: 'dshm dshm-btn', onClick: openLibraryPanel }, t('mini.empty')))))
 
         ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
           name: 'sidebar.panellist',
@@ -2363,14 +2360,7 @@ window.__ModuleLoader__.load({
           name: 'main',
           key: 'music',
           inject: () => ({ t }),
-        }, LibraryPage))
-
-        ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-          name: 'shell.overlay',
-          id: 'dsh-music-nowplaying',
-          order: 55,
-          inject: () => ({ t }),
-        }, NowPlayingPopover))
+        }, guardedCell(LibraryPage, h('div', { className: 'dshm dshm-empty' }, h('div', { className: 'dshm-empty-body' }, 'dsh-music: library failed to render')))))
 
         ctx.slots.inject('settings.section', () => ctx.slots.register({
           name: 'settings.section',
@@ -2378,7 +2368,7 @@ window.__ModuleLoader__.load({
           order: 70,
           label: t('panel.label'),
           inject: () => ({ t }),
-        }, SettingsPage))
+        }, guardedCell(SettingsPage, h('div', { className: 'dshm dshm-note' }, 'dsh-music: settings failed to render'))))
       },
     }
   },
