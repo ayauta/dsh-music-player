@@ -320,6 +320,7 @@ window.__ModuleLoader__.load({
       chevronDown: '<path d="m6 9 6 6 6-6" />',
       chevronLeft: '<path d="m15 18-6-6 6-6" />',
       chevronRight: '<path d="m9 18 6-6-6-6" />',
+      arrowRight: '<path d="M5 12h14" /> <path d="m12 5 7 7-7 7" />',
       close: '<path d="M18 6 6 18" /> <path d="m6 6 12 12" />',
       minus: '<path d="M5 12h14" />',
       volume: '<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" /> <path d="M16 9a5 5 0 0 1 0 6" /> <path d="M19.364 18.364a9 9 0 0 0 0-12.728" />',
@@ -378,6 +379,9 @@ window.__ModuleLoader__.load({
   color: var(--dsw-alias-label-primary);
 }
 .dshm *, .dshm *::before, .dshm *::after { box-sizing: border-box; }
+.dshm-mini, .dshm-pop, .dshm-mini-title, .dshm-mini-sub, .dshm-pop-name, .dshm-pop-sub {
+  -webkit-user-select: none; user-select: none; }
+.dshm-cover img { -webkit-user-drag: none; user-drag: none; pointer-events: none; }
 .dshm button { font: inherit; color: inherit; letter-spacing: inherit; }
 .dshm svg { display: block; flex: none; }
 
@@ -422,7 +426,7 @@ window.__ModuleLoader__.load({
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dshm-mini-controls { display: flex; align-items: center; gap: 0; flex: none; }
 .dshm-mini[data-collapsed="true"] { padding: 6px; display: flex; justify-content: center; }
-.dshm-mini-progress { position: absolute; left: 49px; right: 8px; bottom: 3px; }
+.dshm-mini-progress { position: absolute; left: 53px; right: 12px; bottom: 3px; }
 .dshm-mini-progress .dshm-progress { height: 8px; }
 .dshm-mini-progress .dshm-progress-thumb { display: none; width: 10px; height: 10px; margin: -5px 0 0 -5px; }
 .dshm-mini-progress:hover .dshm-progress-thumb,
@@ -460,7 +464,7 @@ window.__ModuleLoader__.load({
 .dshm-progress[data-dragging="true"] .dshm-progress-bubble { opacity: 1; }
 
 /* now playing popover — Apple Music density: art, name, progress, one control row */
-.dshm-mini-wrap { position: relative; }
+.dshm-mini-wrap { position: relative; margin: 0 -12px; }
 .dshm-pop { position: fixed; z-index: 80; display: flex; flex-direction: column;
   background: var(--dsw-alias-bg-overlay); border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 14px; box-shadow: 0 20px 48px rgba(0,0,0,.26); overflow: hidden;
@@ -814,6 +818,7 @@ window.__ModuleLoader__.load({
     function ProgressBar({ getPlayer, onSeek, variant = 'sheet' }) {
       const rootRef = useRef(null)
       const dragRef = useRef(null)
+      const pendingRef = useRef(null)
       const [dragging, setDragging] = useState(false)
       const bubbleRef = useRef(null)
 
@@ -829,14 +834,31 @@ window.__ModuleLoader__.load({
         }
       }
 
+      /**
+       * A seek must not visibly snap back. The host publishes the playhead once
+       * per second, so right after a click the old value would win for up to a
+       * second ("flicker"). Until the host catches up we keep painting the
+       * requested position.
+       */
+      const currentFraction = () => {
+        const duration = durationOf()
+        if (duration <= 0) return 0
+        const pending = pendingRef.current
+        if (pending !== null) {
+          const age = Date.now() - pending.at
+          const host = estimateMs(getPlayer())
+          if (age < 1600 && Math.abs(host - pending.ms) > 900) {
+            return Math.min(1, pending.ms / duration)
+          }
+          pendingRef.current = null
+        }
+        return Math.min(1, estimateMs(getPlayer()) / duration)
+      }
+
       useEffect(() => {
         let frame = 0
         const tick = () => {
-          if (dragRef.current === null) {
-            const duration = durationOf()
-            const value = duration > 0 ? Math.min(1, estimateMs(getPlayer()) / duration) : 0
-            paint(value)
-          }
+          if (dragRef.current === null) paint(currentFraction())
           frame = requestAnimationFrame(tick)
         }
         frame = requestAnimationFrame(tick)
@@ -855,6 +877,7 @@ window.__ModuleLoader__.load({
         const duration = durationOf()
         if (duration <= 0) return
         const ms = Math.round(fraction * duration)
+        pendingRef.current = { ms, at: Date.now() }
         paint(fraction)
         if (commit) onSeek(ms)
       }
@@ -1109,21 +1132,32 @@ window.__ModuleLoader__.load({
             onSeek: (ms) => guarded(command('player.seek', { ms }), t('np.seek')),
           })) : null),
 
-        h(MiniPopover, {
-          open,
-          wrapRef,
-          track,
-          player,
-          status,
-          getPlayer,
-          onClose: () => setOpen(false),
-        }))
+        h(ErrorBoundary, {
+          makeFallback: (message) => h('div', {
+            className: 'dshm',
+            style: {
+              position: 'fixed', left: 12, bottom: 12, zIndex: 90, padding: '4px 8px',
+              background: 'var(--dsw-alias-bg-overlay)',
+              border: '1px solid var(--dsw-alias-state-error-primary)',
+              borderRadius: 6, fontSize: 11, color: 'var(--dsw-alias-state-error-primary)',
+            },
+          }, `popover: ${message}`),
+        },
+          h(MiniPopover, {
+            open,
+            wrapRef,
+            track,
+            player,
+            status,
+            getPlayer,
+            onClose: () => setOpen(false),
+          })))
     }
 
     /* ────────────────────────── now playing ────────────────────────────── */
 
     const MODE_ORDER = ['sequence', 'all', 'one']
-    const MODE_ICON = { sequence: 'queue', all: 'repeat', one: 'repeatOne' }
+    const MODE_ICON = { sequence: 'arrowRight', all: 'repeat', one: 'repeatOne' }
     const MODE_LABEL = { sequence: 'np.mode.sequence', all: 'np.mode.all', one: 'np.mode.one' }
 
     /** Shuffle toggle — the left slot of Apple Music's transport row. */
@@ -1187,7 +1221,7 @@ window.__ModuleLoader__.load({
 
     function MiniPopover({ open, wrapRef, track, player, status, getPlayer, onClose }) {
       const [closing, setClosing] = useState(false)
-      const [panel, setPanel] = useState(null)
+      const [queueOpen, setQueueOpen] = useState(false)
       const panelRef = useRef(null)
       const wasOpen = useRef(false)
       const closingTimer = useRef(null)
@@ -1238,9 +1272,11 @@ window.__ModuleLoader__.load({
         return () => { try { previous?.focus?.() } catch { /* element gone */ } }
       }, [open])
 
-      useEffect(() => { if (!open) setPanel(null) }, [open])
+      useEffect(() => { if (!open) setQueueOpen(false) }, [open])
 
       if (!visible) return null
+      // Nothing playing: the popover has nothing to say. The row keeps working.
+      if (track === null) return null
 
       // Measured during render so the very first paint is already in place —
       // measuring in an effect made the panel jump on open (the "flicker").
@@ -1252,7 +1288,7 @@ window.__ModuleLoader__.load({
       const bottom = Math.max(8, window.innerHeight - (anchorTop - 8))
       const maxHeight = Math.max(240, window.innerHeight - bottom - 12)
 
-      const playing = player !== null && player.playing === true && player.paused !== true
+      const playing = player?.playing === true && player?.paused !== true
       const mode = player?.mode ?? 'all'
 
       return h('div', {
@@ -1268,20 +1304,20 @@ window.__ModuleLoader__.load({
       h('div', { className: 'dshm-pop-head' },
         h(IconButton, { name: 'chevronDown', label: t('np.collapse'), onClick: onClose, autoFocus: true }),
         h('div', { className: 'dshm-pop-title' }, t('np.title')),
-        h('button', {
-          type: 'button',
-          className: 'dshm-ib dshm-focusable',
-          'aria-label': t('common.more'),
-          title: t('common.more'),
-          'aria-expanded': panel !== null ? 'true' : 'false',
-          onClick: (event) => { event.stopPropagation(); setPanel(panel === null ? 'more' : null) },
-        }, h(Icon, { name: 'more', size: 16 }))),
+        h(IconButton, {
+          name: 'queue',
+          label: t('np.queue'),
+          active: queueOpen,
+          pressed: queueOpen,
+          onClick: () => setQueueOpen((value) => !value),
+        })),
 
-      h('div', { className: 'dshm-pop-body' },
-        h('div', { className: 'dshm-pop-art' }, h(Cover, { track, size: '100%', radius: 12 })),
+      h('div', { className: 'dshm-pop-body', 'data-selectable': 'false' },
+        h('div', { className: 'dshm-pop-art' },
+          h(Cover, { track, size: '100%', radius: 12 })),
         h('div', { className: 'dshm-pop-meta' },
-          h('div', { className: 'dshm-pop-name', title: track.title }, track.title),
-          h('div', { className: 'dshm-pop-sub', title: track.album }, track.artist ?? t('spec.todo'))),
+          h('div', { className: 'dshm-pop-name' }, track.title),
+          h('div', { className: 'dshm-pop-sub' }, track.artist ?? t('spec.todo'))),
 
         h('div', { className: 'dshm-pop-progress' },
           h(ProgressBar, {
@@ -1311,39 +1347,25 @@ window.__ModuleLoader__.load({
           }),
           h(RepeatButton, { mode })),
 
-        panel === 'more' ? h('div', { className: 'dshm-pop-more' },
-          h('button', { type: 'button', className: 'dshm-disclose dshm-focusable', onClick: () => setPanel('queue') },
-            h(Icon, { name: 'queue', size: 15 }), t('np.queue')),
-          h('button', {
-            type: 'button', className: 'dshm-disclose dshm-focusable',
-            onClick: () => { onClose(); openLibraryPanel() },
-          }, h(Icon, { name: 'library', size: 15 }), t('np.library')),
-          h('button', {
-            type: 'button', className: 'dshm-disclose dshm-focusable',
-            onClick: () => setPanel(panel === 'spec' ? null : 'spec'),
-          }, h(Icon, { name: 'disc', size: 15 }), t('np.details'))) : null,
-
-        panel === 'spec' ? h(SpecPanel, { track, engine: status?.engine ?? null }) : null,
-        panel === 'queue' ? h(QueuePanel, { player, tracksVersion: status?.library?.tracks }) : null))
+        queueOpen ? h(QueuePanel, { player, tracksVersion: status?.library?.tracks }) : null))
     }
 
-    function QueuePanel({ player }) {
+    /**
+     * Queue list. One request returns the whole queue with titles, so there is
+     * no per-id render loop and no promise fan-out inside the popover.
+     */
+    function QueuePanel({ player, tracksVersion }) {
       const ids = player?.queue ?? []
-      const [tracks, setTracks] = useState([])
+      const cursor = player?.cursor ?? 0
+      const [rows, setRows] = useState([])
       const [drag, setDrag] = useState(null)
+
       useEffect(() => {
         let cancelled = false
-        if (ids.length === 0) { setTracks([]); return () => { cancelled = true } }
-        Promise.all(ids.map((id) => {
-          const cached = trackCache.get(id)
-          if (cached !== undefined) return Promise.resolve(cached)
-          return call('library.detail', { id }).then((detail) => {
-            if (detail !== null) trackCache.set(id, detail)
-            return detail
-          }).catch(() => null)
-        })).then((list) => { if (!cancelled) setTracks(list) })
+        call('queue.list', {}).then((list) => { if (!cancelled) setRows(Array.isArray(list) ? list : []) })
+          .catch(() => { if (!cancelled) setRows([]) })
         return () => { cancelled = true }
-      }, [ids.join('|')])
+      }, [ids.join('|'), tracksVersion])
 
       if (ids.length === 0) {
         return h('div', { className: 'dshm-sheet-body' },
@@ -1351,43 +1373,42 @@ window.__ModuleLoader__.load({
       }
 
       return h('div', { className: 'dshm-sheet-body', style: { paddingTop: 8 } },
-        h('div', { className: 'dshm-rowline', style: { paddingTop: 0, paddingBottom: 8 } },
+        h('div', { className: 'dshm-rowline', style: { paddingTop: 0, paddingBottom: 6 } },
           h('span', { className: 'dshm-count' }, String(ids.length)),
           h('span', { className: 'dshm-grow' }),
           h('button', {
             type: 'button', className: 'dshm-btn dshm-focusable',
-            onClick: () => guarded(command('queue.set', { ids: ids.slice(0, (player?.cursor ?? 0) + 1) }), t('queue.clear')),
+            onClick: () => guarded(command('queue.set', { ids: ids.slice(0, cursor + 1) }), t('queue.clear')),
           }, t('queue.clear'))),
         ids.map((id, index) => {
-          const track = tracks[index] ?? trackCache.get(id) ?? null
-          const active = index === player?.cursor
+          const row = rows[index] ?? {}
+          const active = index === cursor
           return h('div', {
             key: `${id}-${index}`,
             draggable: true,
-            title: t('queue.drag'),
             onDragStart: () => setDrag(index),
             onDragOver: (event) => event.preventDefault(),
             onDrop: (event) => {
               event.preventDefault()
-              if (drag === null || drag === index) return
-              guarded(command('queue.move', { from: drag, to: index }), t('np.queue'))
+              const from = drag
               setDrag(null)
+              if (from === null || from === index) return
+              guarded(command('queue.move', { from, to: index }), t('np.queue'))
             },
             className: 'dshm-row',
             'data-active': active ? 'true' : undefined,
             style: { gridTemplateColumns: '34px 1fr 34px', cursor: 'grab' },
           },
-          h(Cover, { track, trackId: id, size: 30, radius: 5 }),
+          h(Cover, { track: null, trackId: id, size: 30, radius: 5 }),
           h('div', { style: { minWidth: 0 } },
-            h('div', { className: 'dshm-row-title' }, track?.title ?? id),
-            h('div', { className: 'dshm-row-sub' }, track?.artist ?? t('spec.todo'))),
+            h('div', { className: 'dshm-row-title' }, row.title ?? '…'),
+            h('div', { className: 'dshm-row-sub' }, row.artist ?? '')),
           h('button', {
             type: 'button', className: 'dshm-ib dshm-focusable', 'aria-label': t('queue.remove'),
             onClick: () => guarded(command('queue.remove', { index }), t('queue.remove')),
           }, h(Icon, { name: 'minus', size: 14 })))
         }))
     }
-
     function LyricsPanel({ trackId, getPlayer }) {
       const [lyrics, setLyrics] = useState(null)
       const [active, setActive] = useState(-1)
@@ -1505,6 +1526,7 @@ window.__ModuleLoader__.load({
       const [menu, setMenu] = useState(null)
       const [editing, setEditing] = useState(null)
       const [albumEditing, setAlbumEditing] = useState(null)
+      const [specTrack, setSpecTrack] = useState(null)
       const coverInput = useRef(null)
       const coverTarget = useRef(null)
 
@@ -1864,6 +1886,12 @@ window.__ModuleLoader__.load({
           },
         }) : null,
 
+        specTrack !== null ? h(SpecDialog, {
+          track: specTrack,
+          engine: status?.engine ?? null,
+          onClose: () => setSpecTrack(null),
+        }) : null,
+
         editing !== null ? h(EditDialog, {
           track: editing,
           onClose: () => setEditing(null),
@@ -2015,9 +2043,25 @@ window.__ModuleLoader__.load({
       item(t('ctx.reveal'), 'reveal', { icon: 'folder' }),
       item(t('ctx.edit'), 'edit', { icon: 'pencil' }),
       item(t('ctx.cover'), 'cover', { icon: 'image' }),
+      item(t('np.details'), 'spec', { icon: 'disc' }),
       h('div', { className: 'dshm-menu-sep' }),
       item(t('ctx.remove'), 'remove', { destructive: true, icon: 'trash' }),
       h('div', { className: 'dshm-menu-note' }, t('ctx.removeHint')))
+    }
+
+    function SpecDialog({ track, engine, onClose }) {
+      return h('div', {
+        className: 'dshm dshm-modal',
+        onPointerDown: (event) => { if (event.target === event.currentTarget) onClose() },
+      },
+      h('div', { className: 'dshm-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('np.details') },
+        h('h2', null, track.title),
+        h('div', { className: 'dshm-note', style: { paddingBottom: 4 } }, track.artist ?? t('spec.todo')),
+        h(SpecPanel, { track, engine }),
+        h('div', { className: 'dshm-dialog-foot' },
+          h('button', {
+            type: 'button', className: 'dshm-btn dshm-focusable', 'data-primary': 'true', onClick: onClose,
+          }, t('common.confirm')))))
     }
 
     function EditDialog({ track, onClose, onSaved }) {
@@ -2346,7 +2390,12 @@ window.__ModuleLoader__.load({
           order: 10,
           label: t('panel.label'),
           inject: () => ({ t }),
-        }, guardedCell(MiniPlayer, h('button', { className: 'dshm dshm-btn', onClick: openLibraryPanel }, t('mini.empty')))))
+        }, guardedCell(MiniPlayer, (message) => h('button', {
+          className: 'dshm dshm-btn',
+          'data-destructive': 'true',
+          title: message,
+          onClick: openLibraryPanel,
+        }, `${t('mini.empty')} · ${message}`))))
 
         ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
           name: 'sidebar.panellist',
