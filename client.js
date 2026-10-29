@@ -150,6 +150,7 @@ window.__ModuleLoader__.load({
       'spec.todo': '未知艺术家',
       'spec.fade': '淡入淡出',
       'queue.empty': '队列是空的',
+      'queue.loading': '正在载入队列…',
       'queue.clear': '清空待播放',
       'queue.remove': '从队列移除',
       'queue.drag': '拖动排序',
@@ -287,6 +288,7 @@ window.__ModuleLoader__.load({
       'spec.todo': 'Unknown artist',
       'spec.fade': 'Fade',
       'queue.empty': 'The queue is empty',
+      'queue.loading': 'Loading queue…',
       'queue.clear': 'Clear upcoming',
       'queue.remove': 'Remove from queue',
       'queue.drag': 'Drag to reorder',
@@ -326,6 +328,7 @@ window.__ModuleLoader__.load({
       sequence: '<path d="M4 7h10" /> <path d="M4 12h10" /> <path d="M4 17h6" /> <path d="M18 5v12" /> <path d="m15 14 3 3 3-3" />',
       close: '<path d="M18 6 6 18" /> <path d="m6 6 12 12" />',
       minus: '<path d="M5 12h14" />',
+      volumeOff: '<path d="M11 4.702a.7.7 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.7.7 0 0 0 11 19.298z" /> <path d="m16.5 14.5 5-5" /> <path d="m16.5 9.5 5 5" />',
       volume: '<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" /> <path d="M16 9a5 5 0 0 1 0 6" /> <path d="M19.364 18.364a9 9 0 0 0 0-12.728" />',
       mute: '<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" /> <path d="m16.5 14.5 5-5" /> <path d="m16.5 9.5 5 5" />',
       sliders: '<path d="M14 17H5" /> <path d="M19 7h-9" /> <circle cx="17" cy="17" r="3" /> <circle cx="7" cy="7" r="3" />',
@@ -403,6 +406,17 @@ window.__ModuleLoader__.load({
 .dshm-ib[data-size="xl"]:active { transform: scale(.96); }
 .dshm-ib:disabled { opacity: .35; cursor: default; }
 .dshm-ib:focus-visible, .dshm-focusable:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
+/* Press: a brief, small scale plus a tint — never a bounce. */
+.dshm-btn, .dshm-disclose, .dshm-nav, .dshm-card { transition: background 130ms var(--dshm-ease),
+  color 130ms var(--dshm-ease), transform 90ms var(--dshm-ease); }
+.dshm-btn:active, .dshm-disclose:active { transform: scale(.97); }
+.dshm-nav:active { transform: scale(.985); }
+.dshm-mini:active { background: color-mix(in srgb, var(--dsw-alias-label-primary) 10%, transparent); }
+.dshm-mini-cover:active, .dshm-mini-info:active { transform: none; }
+.dshm-ib:active { background: color-mix(in srgb, var(--dsw-alias-label-primary) 12%, transparent); }
+@media (prefers-reduced-motion: reduce) {
+  .dshm-ib:active, .dshm-btn:active, .dshm-disclose:active, .dshm-nav:active { transform: none; }
+}
 
 /* cover */
 .dshm-cover { position: relative; overflow: hidden; background: var(--dsw-alias-bg-layer-2);
@@ -429,7 +443,7 @@ window.__ModuleLoader__.load({
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dshm-mini-controls { display: flex; align-items: center; gap: 0; flex: none; }
 .dshm-mini[data-collapsed="true"] { padding: 6px; display: flex; justify-content: center; }
-.dshm-mini-progress { position: absolute; left: 61px; right: 12px; bottom: 3px; }
+.dshm-mini-progress { position: absolute; left: 53px; right: 8px; bottom: 3px; }
 .dshm-mini-progress .dshm-progress { height: 8px; }
 .dshm-mini-progress .dshm-progress-thumb { display: none; width: 10px; height: 10px; margin: -5px 0 0 -5px; }
 .dshm-mini-progress:hover .dshm-progress-thumb,
@@ -469,7 +483,7 @@ window.__ModuleLoader__.load({
 /* now playing popover — Apple Music density: art, name, progress, one control row */
 .dshm-pop-error { margin: 4px 12px 8px; padding: 4px 8px; border-radius: 6px; font-size: 11px;
   border: 1px solid var(--dsw-alias-state-error-primary); color: var(--dsw-alias-state-error-primary); }
-.dshm-mini-wrap { position: relative; margin: 0 -12px; flex: 1 1 auto; min-width: 0; align-self: stretch; }
+.dshm-mini-wrap { position: relative; flex: 1 1 auto; min-width: 0; align-self: stretch; }
 .dshm-pop { position: fixed; z-index: 80; display: flex; flex-direction: column;
   background: var(--dsw-alias-bg-overlay); border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 14px; box-shadow: 0 20px 48px rgba(0,0,0,.26); overflow: hidden;
@@ -492,9 +506,13 @@ window.__ModuleLoader__.load({
   font-size: var(--dshm-fs-caption); color: var(--dsw-alias-label-secondary); }
 .dshm-pop-transport { display: flex; align-items: center; justify-content: space-between; gap: 2px; padding: 10px 2px 2px; }
 .dshm-pop-transport .dshm-ib[data-active="true"] { background: transparent; color: var(--dsw-alias-label-primary); }
+.dshm-pop-volume { display: flex; align-items: center; gap: 8px; padding: 12px 2px 0; }
+.dshm-pop-volume .dshm-progress { height: 18px; }
+.dshm-pop-volume .dshm-progress-track { height: 4px; }
+.dshm-pop-volume .dshm-progress-thumb { opacity: 1; }
 .dshm-pop-more { display: flex; flex-direction: column; gap: 1px; padding-top: 10px; margin-top: 10px;
   border-top: 1px solid var(--dsw-alias-border-l1); }
-.dshm-sheet-body { padding: 4px 0 0; overflow: auto; }
+.dshm-sheet-body { padding: 4px 0 0; overflow: auto; flex: 1 1 auto; min-height: 0; }
 .dshm-rowline { display: flex; align-items: center; gap: 6px; padding-top: 6px; }
 .dshm-grow { flex: 1 1 auto; }
 .dshm-vol { display: flex; align-items: center; gap: 8px; width: 124px; flex: none; }
@@ -526,7 +544,7 @@ window.__ModuleLoader__.load({
 .dshm-nav:hover { background: color-mix(in srgb, var(--dsw-alias-label-primary) 7%, transparent); }
 .dshm-nav[data-active="true"] { background: color-mix(in srgb, var(--dsw-alias-label-primary) 10%, transparent); font-weight: 600; }
 .dshm-nav-count { margin-left: auto; font-size: var(--dshm-fs-caption); color: var(--dsw-alias-label-secondary); }
-.dshm-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.dshm-main { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .dshm-toolbar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; flex-wrap: wrap; flex: none; }
 .dshm-h1 { font-size: 17px; font-weight: 600; letter-spacing: -.012em; }
 .dshm-count { font-size: var(--dshm-fs-caption); color: var(--dsw-alias-label-secondary); }
@@ -1324,7 +1342,19 @@ window.__ModuleLoader__.load({
             name: 'next', label: t('mini.next'), size: 'lg',
             onClick: () => guarded(command('player.next'), t('mini.next')),
           }),
-          h(RepeatButton, { mode }))))
+          h(RepeatButton, { mode })),
+
+        h('div', { className: 'dshm-pop-volume' },
+          h(IconButton, {
+            name: player?.muted === true || (player?.volume ?? 100) === 0 ? 'volumeOff' : 'volume',
+            label: t('np.mute'),
+            onClick: () => guarded(command('player.mute', { value: player?.muted !== true }), t('np.mute')),
+          }),
+          h('div', { className: 'dshm-grow' },
+            h(VolumeBar, {
+              value: player?.muted === true ? 0 : (player?.volume ?? 100),
+              onChange: (value) => guarded(command('player.volume', { value }), t('np.volume')),
+            })))))
     }
 
     /**
@@ -1345,11 +1375,16 @@ window.__ModuleLoader__.load({
       }, [ids.join('|'), tracksVersion])
 
       if (ids.length === 0) {
-        return h('div', { className: 'dshm-sheet-body' },
+        return h('div', { className: 'dshm-list' },
           h('div', { className: 'dshm-empty' }, h('div', { className: 'dshm-empty-title' }, t('queue.empty'))))
       }
 
-      return h('div', { className: 'dshm-sheet-body', style: { paddingTop: 8 } },
+      if (rows.length === 0) {
+        return h('div', { className: 'dshm-list' },
+          h('div', { className: 'dshm-empty' }, h('div', { className: 'dshm-empty-title' }, t('queue.loading'))))
+      }
+
+      return h('div', { className: 'dshm-list', style: { paddingTop: 8 } },
         h('div', { className: 'dshm-rowline', style: { paddingTop: 0, paddingBottom: 6 } },
           h('span', { className: 'dshm-count' }, String(ids.length)),
           h('span', { className: 'dshm-grow' }),
