@@ -51,6 +51,7 @@ window.__ModuleLoader__.load({
       'np.unmute': '取消静音',
       'np.seek': '播放进度',
       'lib.all': '全部歌曲',
+      'lib.queue': '播放队列',
       'lib.folders': '文件夹',
       'lib.albums': '专辑',
       'lib.artists': '艺术家',
@@ -187,6 +188,7 @@ window.__ModuleLoader__.load({
       'np.unmute': 'Unmute',
       'np.seek': 'Playback position',
       'lib.all': 'Songs',
+      'lib.queue': 'Play queue',
       'lib.folders': 'Folders',
       'lib.albums': 'Albums',
       'lib.artists': 'Artists',
@@ -427,7 +429,7 @@ window.__ModuleLoader__.load({
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dshm-mini-controls { display: flex; align-items: center; gap: 0; flex: none; }
 .dshm-mini[data-collapsed="true"] { padding: 6px; display: flex; justify-content: center; }
-.dshm-mini-progress { position: absolute; left: 53px; right: 12px; bottom: 3px; }
+.dshm-mini-progress { position: absolute; left: 61px; right: 12px; bottom: 3px; }
 .dshm-mini-progress .dshm-progress { height: 8px; }
 .dshm-mini-progress .dshm-progress-thumb { display: none; width: 10px; height: 10px; margin: -5px 0 0 -5px; }
 .dshm-mini-progress:hover .dshm-progress-thumb,
@@ -465,7 +467,9 @@ window.__ModuleLoader__.load({
 .dshm-progress[data-dragging="true"] .dshm-progress-bubble { opacity: 1; }
 
 /* now playing popover — Apple Music density: art, name, progress, one control row */
-.dshm-mini-wrap { position: relative; margin: 0 -12px; }
+.dshm-pop-error { margin: 4px 12px 8px; padding: 4px 8px; border-radius: 6px; font-size: 11px;
+  border: 1px solid var(--dsw-alias-state-error-primary); color: var(--dsw-alias-state-error-primary); }
+.dshm-mini-wrap { position: relative; margin: 0 -12px; flex: 1 1 auto; min-width: 0; align-self: stretch; }
 .dshm-pop { position: fixed; z-index: 80; display: flex; flex-direction: column;
   background: var(--dsw-alias-bg-overlay); border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 14px; box-shadow: 0 20px 48px rgba(0,0,0,.26); overflow: hidden;
@@ -1005,7 +1009,7 @@ window.__ModuleLoader__.load({
 
     /* ────────────────────────── ui state ───────────────────────────────── */
 
-    const uiState = { nowPlaying: false, listeners: new Set() }
+    const uiState = { nowPlaying: false, pendingView: 'all', listeners: new Set() }
 
     function useUi() {
       const [open, setOpen] = useState(uiState.nowPlaying)
@@ -1022,9 +1026,13 @@ window.__ModuleLoader__.load({
       for (const listener of uiState.listeners) listener()
     }
 
-    function openLibraryPanel() {
-      setNowPlaying(false)
-      window.dispatchEvent(new CustomEvent('dsh-music:open-library'))
+    /**
+     * Open the music panel, optionally on a named view. The panel is a slot
+     * entry we do not mount from here; a window event carries the request.
+     */
+    function openLibraryPanel(view) {
+      uiState.pendingView = view ?? 'all'
+      window.dispatchEvent(new CustomEvent('dsh-music:open-library', { detail: { view: uiState.pendingView } }))
     }
 
     /* ──────────────────────── track lookup cache ───────────────────────── */
@@ -1091,8 +1099,6 @@ window.__ModuleLoader__.load({
       const toggle = () => setOpen((value) => !value)
 
       return h('div', { ref: wrapRef, className: 'dshm dshm-mini-wrap' },
-        // Diagnostic for the click path: shows only while the panel state is open.
-        open ? h('div', { style: { position: 'fixed', left: 4, top: 4, width: 8, height: 8, borderRadius: 4, zIndex: 9999, background: '#ff2d55', pointerEvents: 'none' } }) : null,
         h('div', {
           className: 'dshm-mini',
           'data-collapsed': wide ? undefined : 'true',
@@ -1108,7 +1114,7 @@ window.__ModuleLoader__.load({
             'aria-expanded': open ? 'true' : 'false',
             title: t('mini.open'),
             onClick: (event) => { event.stopPropagation(); toggle() },
-          }, h(Cover, { track, size: wide ? 32 : 30, radius: 6 })),
+          }, h(Cover, { track, size: wide ? 40 : 32, radius: 7 })),
 
           wide ? h('button', {
             type: 'button',
@@ -1136,15 +1142,11 @@ window.__ModuleLoader__.load({
           })) : null),
 
         h(ErrorBoundary, {
+          key: open ? 'open' : 'closed',
           makeFallback: (message) => h('div', {
-            className: 'dshm',
-            style: {
-              position: 'fixed', left: 12, bottom: 12, zIndex: 90, padding: '4px 8px',
-              background: 'var(--dsw-alias-bg-overlay)',
-              border: '1px solid var(--dsw-alias-state-error-primary)',
-              borderRadius: 6, fontSize: 11, color: 'var(--dsw-alias-state-error-primary)',
-            },
-          }, `popover: ${message}`),
+            className: 'dshm dshm-pop-error',
+            title: message,
+          }, `${t('panel.label')}: ${message}`),
         },
           h(MiniPopover, {
             open,
@@ -1223,28 +1225,7 @@ window.__ModuleLoader__.load({
     }
 
     function MiniPopover({ open, wrapRef, track, player, status, getPlayer, onClose }) {
-      const [closing, setClosing] = useState(false)
-      const [screen, setScreen] = useState('now')
       const panelRef = useRef(null)
-      const wasOpen = useRef(false)
-      const closingTimer = useRef(null)
-
-      useEffect(() => {
-        if (closingTimer.current !== null) { clearTimeout(closingTimer.current); closingTimer.current = null }
-        if (open) { wasOpen.current = true; setClosing(false); return undefined }
-        if (!wasOpen.current) return undefined
-        setClosing(true)
-        closingTimer.current = setTimeout(() => {
-          closingTimer.current = null
-          setClosing(false)
-          wasOpen.current = false
-        }, 130)
-        return () => {
-          if (closingTimer.current !== null) { clearTimeout(closingTimer.current); closingTimer.current = null }
-        }
-      }, [open])
-
-      const visible = open || closing
 
       // Dismiss on outside press, but not when the press is the mini row itself
       // (that click is the toggle).
@@ -1275,9 +1256,7 @@ window.__ModuleLoader__.load({
         return () => { try { previous?.focus?.() } catch { /* element gone */ } }
       }, [open])
 
-      useEffect(() => { if (!open) setScreen('now') }, [open])
-
-      if (!visible) return null
+      if (!open) return null
       // Nothing playing: the popover has nothing to say. The row keeps working.
       if (track === null) return null
 
@@ -1297,7 +1276,6 @@ window.__ModuleLoader__.load({
       return h('div', {
         ref: panelRef,
         className: 'dshm dshm-pop',
-        'data-closing': closing ? 'true' : undefined,
         role: 'dialog',
         'aria-modal': 'false',
         'aria-label': t('np.title'),
@@ -1306,18 +1284,14 @@ window.__ModuleLoader__.load({
       },
       h('div', { className: 'dshm-pop-head' },
         h(IconButton, { name: 'chevronDown', label: t('np.collapse'), onClick: onClose, autoFocus: true }),
-        h('div', { className: 'dshm-pop-title' }, screen === 'queue' ? t('np.queue') : t('np.title')),
+        h('div', { className: 'dshm-pop-title' }, t('np.title')),
         h(IconButton, {
           name: 'queue',
           label: t('np.queue'),
-          active: screen === 'queue',
-          pressed: screen === 'queue',
-          onClick: () => setScreen((value) => (value === 'queue' ? 'now' : 'queue')),
+          onClick: () => { onClose(); openLibraryPanel('queue') },
         })),
 
-      screen === 'queue'
-        ? h(QueuePanel, { player, tracksVersion: status?.library?.tracks })
-        : h('div', { className: 'dshm-pop-body', 'data-selectable': 'false' },
+      h('div', { className: 'dshm-pop-body', 'data-selectable': 'false' },
         h('div', { className: 'dshm-pop-art' },
           h(Cover, { track, size: '100%', radius: 12 })),
         h('div', { className: 'dshm-pop-meta' },
@@ -1493,6 +1467,7 @@ window.__ModuleLoader__.load({
 
     const VIEWS = [
       { id: 'all', label: 'lib.all', icon: 'note' },
+      { id: 'queue', label: 'lib.queue', icon: 'queue' },
       { id: 'folders', label: 'lib.folders', icon: 'folder' },
       { id: 'albums', label: 'lib.albums', icon: 'disc' },
       { id: 'artists', label: 'lib.artists', icon: 'heart' },
@@ -1513,7 +1488,7 @@ window.__ModuleLoader__.load({
     function LibraryPage() {
       const snap = useSession()
       const status = snap.status
-      const [view, setView] = useState('all')
+      const [view, setView] = useState(uiState.pendingView ?? 'all')
       const [groupKey, setGroupKey] = useState(null)
       const [groupTitle, setGroupTitle] = useState(null)
       const [playlistId, setPlaylistId] = useState(null)
@@ -1579,6 +1554,17 @@ window.__ModuleLoader__.load({
       }, [view, groupKey, playlistId, query, sort])
 
       useEffect(() => { reload() }, [reload, libraryVersion])
+
+      useEffect(() => {
+        const onOpen = (event) => {
+          const next = event?.detail?.view ?? 'all'
+          setView(next)
+          setGroupKey(null)
+          setPlaylistId(null)
+        }
+        window.addEventListener('dsh-music:open-library', onOpen)
+        return () => window.removeEventListener('dsh-music:open-library', onOpen)
+      }, [])
 
       useEffect(() => {
         const onKey = (event) => {
@@ -1690,6 +1676,7 @@ window.__ModuleLoader__.load({
       })()
 
       const showGroups = (view === 'folders' || view === 'albums' || view === 'artists') && groupKey === null
+      const showQueue = view === 'queue'
       const showPlaylists = view === 'playlists' && playlistId === null
       const rowHeight = density === 'compact' ? 34 : 46
 
@@ -1779,7 +1766,7 @@ window.__ModuleLoader__.load({
           error !== null ? h('div', { className: 'dshm-empty' },
             h('div', { className: 'dshm-empty-body' }, error)) : null,
 
-          view !== 'settings' && !loading && tracks.length === 0 && !showGroups && !showPlaylists
+          view !== 'settings' && !showQueue && !loading && tracks.length === 0 && !showGroups && !showPlaylists
             ? h('div', { className: 'dshm-empty' },
               h('div', { className: 'dshm-empty-title' }, query !== '' ? t('lib.empty.search') : t('lib.empty.title')),
               query !== '' ? null : h('div', { className: 'dshm-empty-body' }, t('lib.empty.body')),
@@ -1823,7 +1810,13 @@ window.__ModuleLoader__.load({
               h('div', { className: 'dshm-card-sub' }, `${playlist.trackIds.length} ${t('lib.tracks')}`))))
             : null,
 
-          view !== 'settings' && !showGroups && !showPlaylists && tracks.length > 0
+          showQueue
+            ? h(ErrorBoundary, {
+              makeFallback: (message) => h('div', { className: 'dshm dshm-pop-error' }, t('lib.queue') + ': ' + message),
+            }, h(QueuePanel, { player: status?.player ?? null, tracksVersion: status?.library?.tracks }))
+            : null,
+
+          view !== 'settings' && !showQueue && !showGroups && !showPlaylists && tracks.length > 0
             ? h(React.Fragment, null,
               h('div', { className: 'dshm-list-head', role: 'row' },
                 h('span', null, ''),
