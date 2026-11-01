@@ -72,6 +72,9 @@ UI 三层并排显示，不会因为「源文件是 24bit」就宣称 bit-perfec
 | `shell.overlay` | `NowPlayingOverlay` | 模态浮层：Esc、点背景关闭、初始聚焦、关闭还原焦点 |
 | `settings.section` | `SettingsPage` | 与宿主设置页同一套排版 |
 
+> 注：`shell.overlay` 一行是 v1.3 之前的历史形态，**当前不再使用**——播放面板改为迷你行内部的
+> 固定定位子组件，原因见 §8 宿主约束 1 与 `docs/DECISIONS.md` D-03。
+
 性能纪律：
 
 - 播放头动画走 `requestAnimationFrame` 直接写 CSS 变量（`--p`），**不 setState**，因此进度不会驱动 React 重渲染。
@@ -94,3 +97,26 @@ UI 三层并排显示，不会因为「源文件是 24bit」就宣称 bit-perfec
 - `apply` 同步注册路由（客户端一渲染就能调用），重活（SQLite、ffprobe、mpv）在 `ready` Promise 后面。
 - `ctx.effect` 注册路由与拆除；禁用/卸载时：停播 → mpv `quit` → 等退出 → 兜底 kill → 关库。
 - 页面卸载时移除 `<style>`（`ctx.effect` 返回清理函数）。
+
+## 8. 已证实的宿主约束
+
+以下两条均在本机运行时验证过，属于**外部约束**，不是本插件可以自行改变的行为。
+
+### 约束 1：slot 条目"渲染空"或抛错会被停用，并且不再挂载
+
+- 现象：list 型 slot（如 `shell.overlay`）会把渲染为 `null` 或抛出异常的条目判为 `active:false`，
+  之后即使重新渲染也不再显示。
+- 证据：运行时查询 slot occupant 得到 `active:false`；两次"点不开"均由此产生
+  （`docs/DECISIONS.md` D-03）。
+- 对架构的影响：
+  - 播放面板**不作为 slot 条目**，而是迷你行内部的 `position: fixed` 子组件；
+  - 三个 slot cell（播放器 / 音乐库 / 设置）各包一层 `ErrorBoundary`，异常时降级而不是整格失活；
+  - 任何 slot 条目都必须"永远渲染出非空内容"。
+
+### 约束 2：客户端 bundle 只在宿主启动时加载
+
+- 现象：`client.js` 改动后，刷新页面、`Ctrl+R`、`F5`、插件禁用→启用在实测中都**不可靠**；
+  连续三次改动后截图哈希完全相同。
+- 唯一的可靠路径：**重启 DSH**，之后新 bundle 才会生效。
+- 证据与验证步骤：`docs/TESTING.md` §6；`AGENTS.md` §7。
+- 对架构的影响：客户端改动必须成批交付；任何"已验证"的客户端结论都必须先证明 bundle 已更新。
