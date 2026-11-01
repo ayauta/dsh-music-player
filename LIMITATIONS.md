@@ -7,7 +7,7 @@
 - **版本变化**看 [`CHANGELOG.md`](CHANGELOG.md)。
 - 本文件不再维护"已完成功能清单"——那种清单最容易过期。
 
-最后更新：2026-11-02（补登 B10–B14，Phase 0B-2）
+最后更新：2026-11-02（B10 修复；补登 B15/B16）
 
 ---
 
@@ -27,7 +27,7 @@
 | **B7** | 队列拖拽用原生 HTML5 DnD，长列表没有自动滚动 | 大量条目时排序不便 | 代码走查 | 低优先级 |
 | **B8** | 新建播放列表用 `window.prompt` | 与自绘对话框风格不一致 | 代码走查 | 低优先级 |
 | **B9** | 搜索无历史与联想，只有即时过滤 | 大库检索效率受限 | 代码走查 | 低优先级 |
-| **B10** | 随机播放下 `enqueue{next}` 插入位置错误：`cursor` 索引 `plays`，`queue` 被 `splice`，随后又整队重新洗牌 | **高优先级缺陷候选**：与 R07「下一首播放」的能力冲突；随机模式的完整顺序规则待进一步确定 | `test/player-queue.test.mjs`「DIAGNOSTIC (known behaviour, B10)」 | 待裁定（随机语义规则未定） |
+| **B10** | 「下一首播放」在 shuffle 下不生效：`cursor + 1` 是 `plays` 的下标，却被用来切 `queue`；插入之后 `rebuildPlays` 又把该项洗走 | **已修（工作区，待重启 L3）**。仅 shuffle 受影响，sequence / all / one 本来就正确 | 修复前 L1 探针（四模式）：只有 shuffle 点下一首播的是 `b` 而不是刚插入的 `d`；修复后 L1 四模式 + L2 真实 mpv 都打开了 `d` 的文件 | 已修，待 L3 |
 | **B11** | 播放中切到单曲循环不裁 mpv 镜像尾，旧队列尾部仍被持有 | **未验证的技术风险**：没有真实 mpv 证据前，不宣称这是用户可见缺陷 | `test/player-transport.test.mjs`「DIAGNOSTIC (known behaviour, B11)」 | 待独立任务的真实 mpv 验证 |
 | **B12** | 删除正在播放的条目会回到队首，而不是顺延到下一首 | **待产品裁定的交互行为**，不是已确认缺陷 | `test/player-queue.test.mjs`「DIAGNOSTIC (pending decision, B12)」 | 待产品裁定（修 / 不修 / 补规范） |
 | **B13** | 重复曲目时 `indexOf` 命中第一条：编辑队列后游标跳到第一份拷贝 | **已复现缺陷**：队列条目身份 / 游标一致性（见 `DECISIONS.md` D-09） | `test/player-queue.test.mjs`「DIAGNOSTIC (known behaviour, B13)」 | 已复现，修法未定 |
@@ -92,7 +92,8 @@
 - 默认安全命令：`npm test`（L1，含状态机测试）、`npm run test:l2`（隔离 host、无声）、
   `npm run smoke`（夹具库）。L1 的授权门用例会自起一个临时**回环** HTTP 服务，
   因此不宜概括为"完全不碰网络"——它不访问任何外部服务或真实宿主。
-- B10–B14 由**诊断用例**（前缀 `DIAGNOSTIC (…)`）锁定现状，**不是"已修复"**；全绿只代表
+- **B12 / B13 / B14** 由**诊断用例**（前缀 `DIAGNOSTIC (…)`）锁定现状，**不是"已修复"**；全绿只代表
+  "仍然可复现"。**B10 已修复**，对应用例已改写为正确行为的回归断言（四模式 + 真实 mpv）。
   "仍然可复现"。测试全绿与"需求已满足"是两件事，区分规则见
   [`docs/TESTING.md`](docs/TESTING.md) §2.1。诊断用例失败时先看
   [`docs/CURRENT.md`](docs/CURRENT.md) §3 的分类，不要直接改断言让它变绿。

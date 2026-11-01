@@ -35,7 +35,7 @@
 | `npm test`（`test/*.test.mjs`） | L1 | ✅ 安全 | 无 | 单元测试 + 状态机测试 + 授权门测试；**不启动 mpv**，只允许受控的本机测试通信（授权门用例会自起一个临时回环服务并断言收到 0 个请求），**不访问真实宿主或外部服务** |
 | `test/parser.test.mjs` / `test/lrc.test.mjs` | L1 | ✅ 安全 | 无 | 解析器与 LRC |
 | `test/player-transport.test.mjs` | L1 | ✅ 安全 | 无 | 空队列、`playQueue`、`next/prev`、`prev` 3 秒规则、四态切换不重载（8 例 = 7 回归 + 1 诊断 B11） |
-| `test/player-queue.test.mjs` | L1 | ✅ 安全 | 无 | 队列编辑保持当前曲、shuffle 起点与可达性（7 回归）+ 4 诊断：B10 / B12 / B13 / B14（共 11 例） |
+| `test/player-queue.test.mjs` | L1 | ✅ 安全 | 无 | 队列编辑保持当前曲、shuffle 起点与可达性、四模式「下一首播放」（8 回归）+ 3 诊断：B12 / B13 / B14（共 11 例） |
 | `test/player-eof-persist.test.mjs` | L1 | ✅ 安全 | 无 | 四态 EOF、解码错误、`dispose → init` 往返、异常存档降级（10 例，全回归） |
 | `test/support/player-harness.mjs` | L1 支撑 | ✅ 安全 | 无 | 假 engine（记录命令 + 可回推事件）、假 db（Map）、`delay: () => Promise.resolve()` |
 | `test/integration/queue-api.test.mjs` | L2 | ✅ 隔离无声 | **无声**（`--ao=null`）、仅临时根 | `queue.list ↔ snapshot` 顺序与元数据一致、写操作回包一致性（7 回归）+ B14 真实 mpv 复现（1 诊断） |
@@ -71,8 +71,8 @@
 | 用例 | 缺陷 | 断言的是什么现状 |
 |---|---|---|
 | `test/player-transport.test.mjs` · DIAGNOSTIC (B11) | B11 | 播放中切单曲循环不裁 mpv 镜像尾 |
-| `test/player-queue.test.mjs` · DIAGNOSTIC (B10) | B10 | shuffle 下 `enqueue{next}` 落错位置 |
 | `test/player-queue.test.mjs` · DIAGNOSTIC (pending decision, B12) | B12 | 删当前曲回到队首 |
+| `test/player-queue.test.mjs` · B10 回归（原诊断已转换） | B10 | 已修为正确行为：A 播放中「下一首播放」X，点下一首必须打开 X（四模式 + 真实 mpv） |
 | `test/player-queue.test.mjs` · DIAGNOSTIC (B13) | B13 | 重复曲游标跳到第一份拷贝 |
 | `test/player-queue.test.mjs` · DIAGNOSTIC (B14) | B14 | `queue.set` 之后 `trackId` 与 mpv 实际文件不一致 |
 | `test/integration/queue-api.test.mjs` · DIAGNOSTIC (B14, real mpv) | B14 | 同上，真实 mpv 证据 |
@@ -314,6 +314,11 @@ npm run smoke -- --library <path> --allow-real-library   # 只读诊断，需显
 | 2026-11-02 | **Manual** | Phase 0B-3 工作区 / source id `dshm-67b0677998e1`（重启后实例 `0.2.1-rc.5 / d4db512`） | L3 | 用户在主窗口 F12 Console 执行 `({bundle: document.documentElement.dataset.dshMusicBundle, phase: document.documentElement.dataset.dshMusicBundlePhase})` | **Passed（仅此一项）**：`{bundle: "dshm-67b0677998e1", phase: "plugin-active"}`，与源码 ID 一致；`--runtime` 复核 exit 0 | 用户 | 证明页面**执行到本插件的激活标记点**、且执行的是该 ID 的字节；**不**证明四个 slot 已挂载、组件渲染无错、B1 已修 |
 | 2026-11-02 | **Manual** | 工作区 / source id `dshm-ab394dbf0ec0`（**经 HMR 热替换，未重启**） | L3（预览，**非 L3 验收**） | 点开侧栏「音乐」→ 左栏「播放队列」；截图 `%TEMP%\b1-step2-queue.png`（修复前）、`b1-step4-queue-after-boundary.png`（仅修降级契约）、`b1-step5-queue-fixed.png`（修根因后） | **修复前**：标题「播放队列」与工具栏正常，内容区全白且无任何文字 → **复现 B1**；**仅修降级后**：显示 `播放队列: Cannot read properties of null (reading 'hasCover')` → 证实是渲染抛错；**修根因后**：队列 6 行全部可见（封面/标题/艺术家/移除键），当前曲高亮 | Agent | 只证明 HMR 预览下该视图恢复；**未**在完整重启后复验，也**未**覆盖空队列状态 |
 | 2026-11-02 | **Manual** | 工作区 / source id `dshm-ab394dbf0ec0`（**完整重启后**，端口 59324，`0.2.1-rc.5 / d4db512`） | L3 | 用户重启 → F12 读 `dataset` → `bundle-id --served` + `--runtime` → 点「音乐」→「播放队列」→ 截图 `%TEMP%\b1-l3-queue.png` | **Passed（B1 验收；不含控制台直读与空队列）**：F12 `{bundle: "dshm-ab394dbf0ec0", phase: "plugin-active"}`；`--served` rev `0d9847268425` 与 Host 一致、127799 字节内容相同、served id 相同；`--runtime` exit 0；**队列 6 行全部可见**（封面/标题/艺术家/移除键）；`sidebar.footer.action` 的 `dsh-music` 仍 `active: true`；迷你行与「全部歌曲」无回归 | 用户 + Agent | 覆盖本次重启与该端口、该 source id；**未**覆盖空队列状态（Not tested，需清空真实队列）与深色主题、队列行拖拽。**控制台无错误属间接证据**：未直接读取 Console，仅由“修复前该路径必抛、修复后降级面不再出现”推得 |
+| 2026-11-02 | Automated | 修复前的工作区（B10） | L1 | `node --test test/player-queue.test.mjs` | **Failed（预期的 Red）**：`shuffle: the entry sits right after the current one`；其余三个模式在此之前已通过 | 脚本 | 证明新回归断言能抓住旧行为 |
+| 2026-11-02 | Automated | 工作区（B10 修复，未提交） | L1 | `npm test` | **Passed**：59 tests / 0 fail（四模式「下一首播放」+ 重复曲目插入位置，取代原 B10 诊断） | 脚本 | 假 engine；**不**证明真实 mpv 打开的文件 |
+| 2026-11-02 | Automated | 初版修复 vs `b02ec77` 基线（B10 复核） | L1 | `git stash push -- lib/host/player.js` 后复跑 `node --test test/player-queue.test.mjs` | **基线通过、初版失败**：`play next lands after the playing copy when the queue repeats a track`（`[a,b,a]` 播第三项时初版给出 `[a,x,b,a]`，基线为 `[a,b,a,x]`） | 脚本 | 证明该插入位置差异由初版引入；调整后两侧都通过 |
+| 2026-11-02 | Automated | 工作区（B10 修复，未提交） | L2 | `npm run test:l2`（隔离 mpv） | **Passed**：23 tests / 0 fail；新增 `B10: play next opens the enqueued file (real mpv, shuffle)` 断言 mpv 打开的就是刚插入曲目的路径 | 脚本 | 真实 mpv 确认打开的是刚插入的文件；**不**覆盖 UI 高亮（B16） |
+| 2026-11-02 | Automated | 工作区（B10 修复，未提交） | L2 | `npm run smoke` | **Passed**：21 checks / 0 fail；`temp root removed` | 脚本 | 仅回归 |
 
 **关于最后一条的说明**：
 

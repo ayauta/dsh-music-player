@@ -65,7 +65,7 @@
 | **B3** | 播放模式仍是两个按钮（随机 + 循环三态） | Implementation Gap | 与 R08 不符 | `client.js` 传输行 | 待排期 |
 | **B4** | 面板内没有队列视图 | Implementation Gap | 与 R06 不符 | 队列按钮打开音乐库 | 待排期 |
 | **B5** | Windows 媒体键未实现、路径未验证 | Implementation Gap | R11 `Not tested` | 见 `DECISIONS.md` D-07 | 待调查 |
-| **B10** | 随机播放下调 `enqueue{next}` 时插入位置错误（`cursor` 索引 `plays`，`queue` 被 `splice`；随后又被重新洗牌） | **高优先级缺陷候选**（与 R07「下一首播放」冲突；随机模式的完整顺序规则待定） | "下一首播放"在 shuffle 下不生效 | 见 `LIMITATIONS.md` §一 B10 | 待裁定 |
+| **B10** | 随机播放下「下一首播放」插到错误位置（`cursor+1` 是 `plays` 下标，却用来切 `queue`；随后又被整队重洗） | **已修（工作区，待重启 L3）**：仅 shuffle 受影响 | "下一首播放"在 shuffle 下不生效 | 见 `LIMITATIONS.md` §一 B10；L1 四模式 + L2 真实 mpv 均判定"下一个打开的文件就是刚插入的" | 已修，待 L3 |
 | **B11** | 播放中切到单曲循环不裁 mpv 镜像尾，旧队列尾部仍被持有 | **未验证的技术风险**（无真实 mpv 证据前不宣称用户可见缺陷） | 队尾 EOF 时的实际表现未在真实 mpv 下复验 | 见 `LIMITATIONS.md` §一 B11 | 待 L2/L3 复验 |
 | **B12** | 删除正在播放的队列条目会回到队首（而不是顺延到下一首） | **待产品裁定的交互行为**（不是已确认缺陷） | 与用户直觉不符，但无 Approved 条目 | 见 `LIMITATIONS.md` §一 B12 | 待裁定 |
 | **B13** | 重复曲目时 `indexOf` 命中第一条，编辑队列后游标跳到第一份拷贝 | **已复现缺陷**：队列条目身份 / 游标一致性 | 队列高亮与"清空后续"可能作用在错误条目 | 见 `LIMITATIONS.md` §一 B13 | 已复现，修法未定 |
@@ -136,7 +136,7 @@ Phase 0B-3（Bundle ID）的取证状态——2026-11-02 02:09 用户重启后�
    打 `baseline-v1.7.0`（指向 `b8dc624`）仍待定
 5. **候选 A 单独审查**：镜像计划深模块，属状态机高风险改动，需影响分析；前置条件已具备
 5. **B1 队列空白**：F12 看是否有 `[dsh-music] render failed`——有＝渲染抛错，无＝容器/空子树
-6. **缺陷裁定**：B10 / B12 / B13 / B14 逐个给结论（修 / 不修 / 改规范）；B11 先补 L2 复验
+6. **缺陷裁定**：B12 / B13 / B14 逐个给结论（修 / 不修 / 改规范）；B11 先补 L2 复验；B10 已修（待 L3）
 7. **R06 / R08**：面板内队列视图 + 单按钮四态（纯客户端）
 8. **R11**：确认 SMTC 会话可见性，决定媒体键路径
 
@@ -221,7 +221,7 @@ Phase 0B-3（Bundle ID）的取证状态——2026-11-02 02:09 用户重启后�
   `next` 与回绕、`sequence` 队尾、单曲队列、`prev` 的 3 秒规则、切模式不重载；
   诊断项 = 单曲循环镜像尾（B11）
 - `test/player-queue.test.mjs`（11 例 = 7 回归 + 4 诊断）：`move` / `removeAt` / `enqueue{next,end}` /
-  `setQueue` 的当前曲保持、shuffle 起点与可达性；诊断项 = B10 / B12 / B13 / B14
+  `setQueue` 的当前曲保持、shuffle 起点与可达性；诊断项 = B10 / B12 / B13 / B14（B10 已于后续修复，转为回归断言）
 - `test/player-eof-persist.test.mjs`（10 例，全回归）：`seek` 夹取、自动推进（`pos` 事件）、四态 EOF、
   解码错误跳过、`dispose → init` 往返、异常存档降级、`restoreQueue:false`
 - `test/integration/queue-api.test.mjs`（8 例 = 7 回归 + 1 诊断，L2）：`queue.list ↔ snapshot` 顺序一致、
@@ -295,3 +295,28 @@ served 126 965 字节内容相同、served id 相同、host release `0.2.1-rc.5 
   但这**不算** L3 验证——热替换不是重启，也不代表四个 slot 重新注册成功
 - 未改四个 slot 的 register/inject、未动 `immediately`、未改 `ErrorBoundary`、未修 B1、
   未加每 slot 的 mounted effect、未改状态机/队列/API/持久化、未做 HMR 故障注入
+
+**B10 修复（工作区未提交，Host 侧）**
+
+- 复现（隔离 L1，假 engine，四模式逐一跑）：playing A → 「下一首播放」d → 点下一首
+  - `sequence` / `all` / `one`：下一首播 `d`（本来就正确）
+  - `shuffle`：下一页播 **`b`**，且 `queue` 变成 `[a,b,c,d]`（`d` 落到队尾）
+- 根因：`cursor` 索引的是 `plays`（shuffle 的排列），而 `enqueue('next')` 用
+  `cursor + 1` 去切 `queue`。两个下标空间混用 → 插入位置错；紧接的 `rebuildPlays`
+  又把整个队列重洗一遍 → 即使插对也会被洗走
+- 修复（`lib/host/player.js` 的 `enqueue`，+9 / −12）：
+  - `queue` 的插入位置按模式分开：非 shuffle 保持 `cursor + 1`（`plays` 是 `queue` 的镜像，
+    下标精确，重复曲目也对）；shuffle 用「当前曲在 `queue` 里的下一位」
+  - shuffle 下**直接 splice `plays`**（`cursor + 1`），不再 rebuild —— "下一首"是明确的顺序指令，
+    重洗会把它抹掉；其余轮次顺序保持不动
+- 非 shuffle 路径仍是原来的 `rebuildPlays + indexOf(keep)`，行为不变
+- Red → Green：新回归测试先在旧代码上失败（`shuffle: the entry sits right after the current one`），
+  修复后四模式全过；L2 用隔离 mpv 复验"下一个打开的文件就是刚插入的那首"
+- 复核发现并修掉的自身回归：初版把两种模式都改成 `queue.indexOf(keep) + 1`，
+  在 `[a,b,a]` 且播放第三项时会把新项插到第一个 `a` 之后（`[a,x,b,a]`）。
+  同一用例在 `b02ec77` 基线上通过、在初版上失败，确认是本轮引入；已改回按模式分支。
+  重复曲目的**游标**问题（重建后 `indexOf` 回到第一份）属 B13，未动
+- 未改动：mpv 镜像计划、`queueEntryId`、API 契约、shuffle 策略、客户端
+- 与 B14 的关系：**不同根因**（B14 是 `setQueue` 丢掉当前曲时传了 `restart: false`），
+  两者可以独立修；本次未触碰 B14
+- 尚未 L3：这是 Host 侧改动，需要重启 DSH 才在真实实例生效（客户端未改，Bundle ID 不变）
