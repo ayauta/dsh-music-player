@@ -1,132 +1,155 @@
 /**
- * Standalone integration smoke test for the Host half (no Cordis, no browser):
- * real SQLite, real ffprobe, real mpv, real 24-bit/48 kHz files.
+ * Host smoke test — isolated and silent by default.
  *
- *   node scripts/service-smoke.mjs [libraryRoot]
+ *   node scripts/service-smoke.mjs                      # fixture library, ao=null
+ *   node scripts/service-smoke.mjs --library <path> --allow-real-library
+ *
+ * Default mode generates a temporary fixture library and never touches a real
+ * profile, a running DSH instance, or the audio device.
+ *
+ * The real-library mode is a read-only diagnostic: files are never modified,
+ * playback stays silent (ao=null), and the assertions are generic invariants
+ * rather than expectations about a specific private library.
  */
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { createIsolatedHost } from '../test/support/host.mjs'
 
-const root = process.argv[2] ?? 'D:\\归档\\兰音专辑'
-const scratch = mkdtempSync(join(tmpdir(), 'dsh-music-smoke-'))
-process.env.DSH_HOME = scratch
-
-const { startMusicService, normalizeConfig } = await import('../lib/host/plugin.js')
-
-const lines = []
-const log = (level, message) => {
-  const line = `${level}: ${message}`
-  lines.push(line)
-  if (level !== 'info') console.log('  ' + line)
+function parseArgs(argv) {
+  const options = { library: null, allowReal: false }
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i]
+    if (arg === '--allow-real-library') options.allowReal = true
+    else if (arg === '--library') { options.library = argv[i + 1] ?? null; i += 1 }
+  }
+  return options
 }
 
-const fail = (message) => { console.error('FAIL — ' + message); throw new Error(message) }
-const check = (condition, message) => { if (!condition) fail(message); console.log('  ok   ' + message) }
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+function refuse(reason, lines = []) {
+  console.error(`\nrefused: ${reason}`)
+  for (const line of lines) console.error(`  ${line}`)
+  process.exit(2)
+}
 
-console.log(`scratch DSH_HOME: ${scratch}`)
-const service = await startMusicService(normalizeConfig({ engine: 'auto' }), { ctx: null, log })
-console.log(`engine mode     : ${service.engineMode}`)
+const options = parseArgs(process.argv.slice(2))
+if (options.library !== null && options.allowReal !== true) {
+  refuse('--library requires --allow-real-library', [
+    'Scanning a real library is a diagnostic, not part of the default test run:',
+    '',
+    '  node scripts/service-smoke.mjs --library <path> --allow-real-library',
+    '',
+    'It stays read-only and silent (mpv --ao=null), but it does read your files.',
+  ])
+}
+
+const sleep = (ms) => new Promise((done) => setTimeout(done, ms))
+
+let failures = 0
+function check(condition, message, extra) {
+  if (condition) console.log(`  ok   ${message}`)
+  else { failures += 1; console.log(`  FAIL ${message}${extra === undefined ? '' : ` — ${JSON.stringify(extra)}`}`) }
+}
+
+const host = await createIsolatedHost({ fixtureLibrary: options.library === null })
+console.log(`temp root : ${host.root}`)
+console.log(`data dir  : ${host.dataDir}`)
+console.log(`mpv       : ${host.tooling.mpv}`)
+console.log(`config.ao : ${host.config.ao}`)
+console.log(`engine    : ${host.service.engineMode}`)
 
 try {
-  check(service.engineMode === 'mpv', 'mpv engine started')
+  const { call } = host
 
-  const rootRow = await service.api.dispatch('roots.add', { path: root })
-  check(typeof rootRow.id === 'string', 'library root added')
+  check(host.service.engineMode === 'mpv', 'mpv engine started')
 
-  for (let i = 0; i < 120; i++) {
-    const runs = await service.api.dispatch('library.scanStatus', {})
-    const run = runs.find((r) => r.rootId === rootRow.id)
-    if (run?.status === 'done') break
-    await sleep(500)
+  let tracks = []
+  if (options.library === null) {
+    tracks = host.tracks
+    check(tracks.length === 3, `fixture library indexed 3 tracks (got ${tracks.length})`)
+    const titles = tracks.map((track) => track.title).sort()
+    // Code-unit order: 丙 (U+4E19) < 乙 (U+4E59) < 甲 (U+7532)
+    check(titles.join(',') === '测试丙,测试乙,测试甲', 'parsed numbered Chinese titles', { titles })
+    const wav = tracks.find((track) => track.title === '测试甲')
+    check(wav?.bitsPerSample === 24 && wav?.sampleRate === 48000, 'measured 24bit/48kHz for the generated wav')
+    check(wav?.channels === 2, 'measured 2 channels')
+    check(tracks.some((track) => track.ext === '.mp3'), 'indexed the mp3 fixture')
+    check(tracks.every((track) => track.hasCover === true), 'folder cover applied to every track')
+    const folders = await call('library.groups', { kind: 'folder' })
+    check(folders.length === 1, `one folder group (got ${folders.length})`)
+  } else {
+    const row = await call('roots.add', { path: options.library })
+    for (let i = 0; i < 240; i += 1) {
+      const runs = await call('library.scanStatus', {})
+      if (runs.find((run) => run.rootId === row.id)?.status === 'done') break
+      await sleep(500)
+    }
+    const runs = await call('library.scanStatus', {})
+    check(runs.every((run) => run.status === 'done'), 'scan finished')
+    tracks = await call('library.list', { view: 'all' })
+    console.log(`  diagnostic: ${tracks.length} tracks indexed`)
+    check(tracks.length > 0, 'library is not empty')
+    check(tracks.every((track) => typeof track.id === 'string' && track.durationMs > 0), 'every track has an id and duration')
+    const detail = await call('library.detail', { id: tracks[0].id })
+    check(detail !== null && typeof detail.path === 'string', 'detail resolves for the first track')
+    check(detail.artist === null || typeof detail.artist === 'string', 'artist is either absent or a string (never invented)')
   }
-  const runs = await service.api.dispatch('library.scanStatus', {})
-  check(runs.every((r) => r.status === 'done'), 'scan finished')
 
-  const tracks = await service.api.dispatch('library.list', { view: 'all' })
-  console.log(`  tracks indexed: ${tracks.length}`)
-  check(tracks.length === 41, 'indexed all 41 audio files')
-
-  const first = tracks.find((t) => t.title === '形神合一' && t.trackNo === 1)
-  check(first !== undefined, 'parsed 01.《形神合一》')
-  check(first.bitsPerSample === 24 && first.sampleRate === 48000, 'measured 24bit/48kHz')
-  check(first.channels === 2, 'measured 2 channels')
-  check(first.durationMs > 185000 && first.durationMs < 187000, 'measured duration ~186s')
-  check(first.unknownTokens.includes('兰音'), 'kept 兰音 as an unrecognised token')
-  check(first.artist === null, 'no artist invented')
-  check(first.hasCover === true, 'folder cover.jpg detected')
-
-  const detail = await service.api.dispatch('library.detail', { id: first.id })
-  check(detail.claimMatchesMeasurement === true, 'filename claim matches the measurement')
-
-  const mp3 = tracks.find((t) => t.ext === '.mp3' && t.title.startsWith('【解锁奖励1】'))
-  check(mp3 !== undefined, 'parsed the 【解锁奖励1】 mp3 name verbatim')
-
-  const noClaim = tracks.find((t) => t.basename === '1. 梦倾天下.wav')
-  check(noClaim !== undefined && noClaim.bitsPerSample === 24, 'found 24-bit file whose name omits the bit depth')
-
-  const folders = await service.api.dispatch('library.groups', { kind: 'folder' })
-  console.log(`  folders: ${folders.length} (${folders.map((f) => f.title).join(' | ')})`)
-  check(folders.length === 5, 'five folders (3 albums + 2 伴奏)')
-
-  const ids = tracks.map((t) => t.id)
-  const snapshot = await service.api.dispatch('queue.play', { ids, startIndex: 0 })
+  const ids = tracks.map((track) => track.id)
+  const snapshot = await call('queue.play', { ids, startIndex: 0 })
   check(snapshot.trackId === ids[0], 'queue.play started the first track')
-  await sleep(2500)
+  await sleep(1500)
 
-  const status = await service.api.dispatch('status', {})
-  console.log(`  position: ${status.player.positionMs}ms / ${status.player.durationMs}ms`)
-  console.log(`  out  : ${JSON.stringify(status.engine.audioOut)}`)
-  console.log(`  dec  : ${JSON.stringify(status.engine.audioDecoded)}`)
-  check(status.player.positionMs > 500, 'position advancing')
-  check(status.engine.audioOut?.samplerate === 48000, 'device output reports 48 kHz')
-  check(status.engine.audioDecoded?.format === 's32', 'decoded PCM format is s32 (24-bit in 32-bit container)')
+  const status = await call('status', {})
+  check(status.engine.ao === 'null', `mpv is using the silent AO (got ${status.engine.ao})`)
+  check(status.player.positionMs > 300, 'position advancing')
+  check(status.engine.audioDecoded?.format === 's32' || status.engine.audioDecoded?.format === 's16',
+    'decoded PCM format reported', { decoded: status.engine.audioDecoded })
 
-  const paused = await service.api.dispatch('player.pause', {})
-  const posA = paused.positionMs
+  await call('player.pause')
+  const pausedAt = (await call('status', {})).player.positionMs
   await sleep(900)
-  const status2 = await service.api.dispatch('status', {})
-  check(Math.abs(status2.player.positionMs - posA) <= 1100, 'pause stopped the position clock')
+  const stillPaused = (await call('status', {})).player.positionMs
+  check(Math.abs(stillPaused - pausedAt) <= 1100, 'pause stopped the position clock')
 
-  await service.api.dispatch('player.seek', { ms: 60000 })
-  await sleep(700)
-  const status3 = await service.api.dispatch('status', {})
-  check(status3.player.positionMs >= 59000, 'seek landed near 60s')
+  await call('player.seek', { ms: 1000 })
+  await sleep(500)
+  check((await call('status', {})).player.positionMs >= 900, 'seek landed near 1s')
 
-  await service.api.dispatch('player.volume', { value: 40 })
-  const status4 = await service.api.dispatch('status', {})
-  check(status4.player.volume === 40, 'volume applied')
+  await call('player.volume', { value: 40 })
+  check((await call('status', {})).player.volume === 40, 'volume applied')
 
-  await service.api.dispatch('player.mode', { mode: 'shuffle' })
-  const status5 = await service.api.dispatch('status', {})
-  check(status5.player.mode === 'shuffle', 'mode switched to shuffle')
-  await service.api.dispatch('player.mode', { mode: 'all' })
+  await call('player.mode', { mode: 'shuffle' })
+  check((await call('status', {})).player.mode === 'shuffle', 'mode switched to shuffle')
+  await call('player.mode', { mode: 'all' })
 
-  await service.api.dispatch('favorite.set', { id: ids[1], on: true })
-  const favorites = await service.api.dispatch('library.list', { view: 'favorites' })
+  await call('favorite.set', { id: ids[1], on: true })
+  const favorites = await call('library.list', { view: 'favorites' })
   check(favorites.length === 1, 'favorite persisted')
 
-  const playlist = await service.api.dispatch('playlists.create', { name: '测试列表' })
-  await service.api.dispatch('playlists.add', { id: playlist.id, trackIds: [ids[0], ids[1]] })
-  const playlists = await service.api.dispatch('playlists.list', {})
-  check(playlists[0].trackIds.length === 2, 'playlist items stored')
+  const playlist = await call('playlists.create', { name: '测试列表' })
+  await call('playlists.add', { id: playlist.id, trackIds: [ids[0], ids[1]] })
+  const playlists = await call('playlists.list', {})
+  check(playlists[0]?.trackIds.length === 2, 'playlist items stored')
 
-  await service.api.dispatch('queue.enqueue', { ids: [ids[5]], position: 'next' })
-  const afterEnqueue = await service.api.dispatch('player.state', {})
-  check(afterEnqueue.cursor === 0 && afterEnqueue.queue[1] === ids[5], 'play-next inserted after the current track')
+  await call('queue.enqueue', { ids: [ids[2]], position: 'next' })
+  const afterEnqueue = await call('player.state', {})
+  check(afterEnqueue.cursor === 0 && afterEnqueue.queue[1] === ids[2], 'play-next inserted after the current track')
 
-  const searched = await service.api.dispatch('library.list', { query: '形神' })
-  check(searched.length >= 2, `search 「形神」 matched ${searched.length} tracks`)
-  const fuzzy = await service.api.dispatch('library.list', { query: '梦倾' })
-  check(fuzzy.length >= 2, `search 「梦倾」 matched ${fuzzy.length} tracks`)
+  const searchTerm = options.library === null ? '测试' : tracks[0].title.slice(0, 1)
+  const searched = await call('library.list', { query: searchTerm })
+  check(searched.length >= 1, `search "${searchTerm}" matched ${searched.length} track(s)`)
 
-  await service.api.dispatch('queue.clear', {})
-  console.log('\nALL HOST CHECKS PASSED')
+  await call('player.pause')
+} catch (error) {
+  failures += 1
+  console.error(`FAIL — ${error?.message ?? error}`)
 } finally {
-  await service.dispose()
-  await sleep(600)
-  try { rmSync(scratch, { recursive: true, force: true }) } catch { /* windows lock */ }
-  console.log('service disposed')
+  const cleanup = await host.dispose()
+  if (cleanup.removed !== true) {
+    failures += 1
+    console.error(`FAIL — temp root not removed: ${host.root}`)
+  } else {
+    console.log('  ok   temp root removed')
+  }
 }
-process.exit(0)
+
+console.log(failures === 0 ? '\nSMOKE PASSED' : `\n${failures} SMOKE CHECK(S) FAILED`)
+process.exit(failures === 0 ? 0 : 1)

@@ -7,7 +7,51 @@
  *
  *   node scripts/playback-test.mjs
  */
-const API = process.env.DSH_MUSIC_API ?? 'http://127.0.0.1:62618/music/api'
+/* ---------------------------------------------------------------------------
+ * LIVE GATE — runs before any fetch, file read or playback.
+ * This script talks to a RUNNING DSH instance and changes the real queue,
+ * playback mode, settings and position, so it is opt-in only.
+ *
+ * Required:
+ *   DSH_MUSIC_ALLOW_LIVE=1                 explicit user authorization
+ *   DSH_MUSIC_API=http://127.0.0.1:<port>/music/api   explicit target
+ *
+ * There is no default port: the host picks a new one on every restart.
+ * See docs/TESTING.md §3 for why this script is never auto-run.
+ * ------------------------------------------------------------------------- */
+function refuse(reason, lines) {
+  console.error(`\nrefused: ${reason}`)
+  for (const line of lines) console.error(`  ${line}`)
+  process.exit(2)
+}
+
+if (process.env.DSH_MUSIC_ALLOW_LIVE !== '1') {
+  refuse('live authorization missing (DSH_MUSIC_ALLOW_LIVE !== "1")', [
+    'This script changes the real queue, mode, settings and playback.',
+    'Run it only when you mean it, with an explicit API address:',
+    '',
+    '  DSH_MUSIC_ALLOW_LIVE=1 DSH_MUSIC_API=http://127.0.0.1:<port>/music/api \\',
+    '    node scripts/playback-test.mjs',
+    '',
+    'The isolated, silent equivalent is: npm run test:l2',
+  ])
+}
+
+const API = process.env.DSH_MUSIC_API ?? ''
+if (API === '') {
+  refuse('missing DSH_MUSIC_API', ['There is no default port; the host picks a new one on every restart.'])
+}
+
+let apiUrl = null
+try { apiUrl = new URL(API) } catch { refuse(`not a valid URL: ${API}`, []) }
+
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]'])
+if (!LOOPBACK_HOSTS.has(apiUrl.hostname)) {
+  refuse(`DSH_MUSIC_API must be a loopback address, got: ${apiUrl.hostname}`, [])
+}
+if (!apiUrl.pathname.replace(/\/+$/, '').endsWith('/music/api')) {
+  refuse(`DSH_MUSIC_API must end with /music/api, got: ${apiUrl.pathname}`, [])
+}
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 async function call(op, payload) {

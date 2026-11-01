@@ -122,7 +122,30 @@
 - `ARCHITECTURE.md`：只新增 §8 两条已证实宿主约束，并修正 `shell.overlay` 的历史标注
 - `LIMITATIONS.md`：删除过期的"已完成清单"，改为缺陷登记（B1、B3–B9）+ 限制 + 不做清单
 
-**没有做的**
+**Phase 0B-1（测试安全与隔离，已完成，未提交）**
 
-- 未改源码、测试脚本、API、数据库、Client UI、版本号
-- 未提交、未打标签、未重启 DSH、未执行任何有副作用的测试、未删除 `artifacts/`
+- `lib/host/plugin.js`：`DEFAULTS` 增加 `ao: 'wasapi'`，`normalizeConfig` 用白名单
+  `AO_VALUES = ['wasapi','null']` 限制取值，非法值回落默认；`lib/host/engine.js` 的 argv
+  改为 `--ao=${config.ao}`，**默认生产行为不变**
+- `scripts/playback-test.mjs` / `scripts/loadtest.mjs`：顶部授权门（默认拒绝，退出码 2）；
+  `loadtest` 另需 `DSH_MUSIC_ALLOW_PERF`；两者都移除了固定端口，要求显式 `DSH_MUSIC_API`
+  且必须是回环 + `/music/api`
+- `test/support/fixtures.mjs` / `test/support/host.mjs`：自建临时根、夹具生成、`ao=null`、
+  进程内 dispatch、先 dispose 再删目录
+- `test/integration/playback.test.mjs`：原 `playback-test` 的 12 组断言迁到隔离环境
+- `test/guard.test.mjs`：本地计数 HTTP 服务证明"拒绝时目标收到 0 个请求"
+- `test/support/host.mjs` 的异常路径加固：`mkdtemp` 之后的任何失败（模块加载、夹具生成、
+  mpv 起不来、扫描失败）都会先 dispose 再删临时根，并把失败原因带出；
+  `playback.test.mjs` 的 teardown 在 host 创建**之前**注册
+- `scripts/service-smoke.mjs`：默认夹具库 + `ao=null`；真实库需 `--library … --allow-real-library`
+- `package.json`：`test` / `test:l2` / `smoke` / `test:live` / `perf`
+
+实测：`npm test` 16/16 通过（606ms）；`npm run test:l2` 14/14 通过（24.1s，`engine.ao='null'`）；
+`npm run smoke` 21 项通过，`temp root removed`。**未执行**：真实宿主、真实音乐库诊断、有声测试、性能测试。
+
+**Phase 0B-1 没有做的**
+
+- 未改播放状态机、模式/队列/seek 语义、队列空白问题、UI/动效/Design Spec、`client.js`、版本号
+- 未提交、未打标签、未重启 DSH、未删除 `artifacts/`
+- **未验证生产音频路径**：`ao` 默认值仍是 `wasapi`，本轮只做了静态检查与隔离测试，
+  没有用真实音频设备播放过（需要人工复验）

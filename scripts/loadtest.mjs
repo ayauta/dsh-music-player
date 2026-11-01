@@ -11,11 +11,54 @@
 import { spawn } from 'node:child_process'
 import os from 'node:os'
 
-const API = process.env.DSH_MUSIC_API ?? 'http://127.0.0.1:62618/music/api'
-const baselineSeconds = Number(process.argv[2] ?? 20)
-const stressSeconds = Number(process.argv[3] ?? 45)
+/* ---------------------------------------------------------------------------
+ * PERFORMANCE GATE — two independent switches, both default off.
+ *   DSH_MUSIC_ALLOW_PERF=1   you intend to saturate the CPU for tens of seconds
+ *   DSH_MUSIC_ALLOW_LIVE=1   you authorize touching the real player state
+ *   DSH_MUSIC_API=<url>      explicit loopback target, no default port
+ * This is a measurement tool, not a regression test: it never runs in CI or
+ * in `npm test`, and it changes the real queue and playback.
+ * ------------------------------------------------------------------------- */
+function refuse(reason, lines) {
+  console.error(`\nrefused: ${reason}`)
+  for (const line of lines) console.error(`  ${line}`)
+  process.exit(2)
+}
+
+if (process.env.DSH_MUSIC_ALLOW_PERF !== '1') {
+  refuse('performance authorization missing (DSH_MUSIC_ALLOW_PERF !== "1")', [
+    'This script saturates the CPU and plays the whole library for tens of seconds.',
+    'It is a measurement tool, never part of the default test run.',
+    '',
+    '  DSH_MUSIC_ALLOW_PERF=1 DSH_MUSIC_ALLOW_LIVE=1 \\',
+    '    DSH_MUSIC_API=http://127.0.0.1:<port>/music/api node scripts/loadtest.mjs',
+  ])
+}
+
+if (process.env.DSH_MUSIC_ALLOW_LIVE !== '1') {
+  refuse('live authorization missing (DSH_MUSIC_ALLOW_LIVE !== "1")', [
+    'This script changes the real queue and playback.',
+  ])
+}
+
+const API = process.env.DSH_MUSIC_API ?? ''
+if (API === '') refuse('missing DSH_MUSIC_API', ['There is no default port.'])
+
+let apiUrl = null
+try { apiUrl = new URL(API) } catch { refuse(`not a valid URL: ${API}`, []) }
+
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]'])
+if (!LOOPBACK_HOSTS.has(apiUrl.hostname)) {
+  refuse(`DSH_MUSIC_API must be a loopback address, got: ${apiUrl.hostname}`, [])
+}
+if (!apiUrl.pathname.replace(/\/+$/, '').endsWith('/music/api')) {
+  refuse(`DSH_MUSIC_API must end with /music/api, got: ${apiUrl.pathname}`, [])
+}
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const baselineSeconds = Number(process.argv[2] ?? 20)
+const stressSeconds = Number(process.argv[3] ?? 45)
 
 async function call(op, payload) {
   const response = await fetch(API, {

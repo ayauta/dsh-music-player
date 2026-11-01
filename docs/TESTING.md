@@ -32,27 +32,35 @@
 
 | 资产 | 层 | 状态 | 副作用 | 备注 |
 |---|---|---|---|---|
-| `test/parser.test.mjs` | L1 | ✅ 可用 | 无 | 文件名解析表驱动 |
-| `test/lrc.test.mjs` | L1 | ✅ 可用 | 无 | LRC 解析 |
-| `scripts/service-smoke.mjs` | L2 | ✅ 可用 | **会出声**；数据库隔离（临时 `DSH_HOME`，结束删除） | 默认扫描**真实音乐库根目录**，需改为参数化夹具路径 |
-| `scripts/playback-test.mjs` | L3 | ⛔ **禁止自动执行** | **覆盖真实队列、修改真实设置（fade）、改变当前播放**，结束后不恢复 | 逻辑应迁移到 L2 隔离实例 |
-| `scripts/loadtest.mjs` | L3 | ⛔ **禁止自动执行** | 同上，另加 20–45s CPU 饱和 | 人工压测工具，不是回归测试 |
+| `npm test`（`test/*.test.mjs`） | L1 | ✅ 安全 | 无 | 单元测试 + 授权门测试；**不启动 mpv**，只允许受控的本机测试通信（授权门用例会自起一个临时回环服务并断言收到 0 个请求），**不访问真实宿主或外部服务** |
+| `test/parser.test.mjs` / `test/lrc.test.mjs` | L1 | ✅ 安全 | 无 | 解析器与 LRC |
+| `test/guard.test.mjs` | L1 | ✅ 安全 | 无（只起一个本地计数 HTTP 服务） | 证明危险脚本未授权时拒绝，且**目标服务器收到 0 个请求** |
+| `test/support/fixtures.mjs` | L1 支撑 | ✅ 安全 | 写临时目录 | 用 ffmpeg 生成 8s/3s/3s 夹具与封面 |
+| `test/support/host.mjs` | L2 支撑 | ✅ 隔离 | 临时 `DSH_HOME`、临时库 | 自建临时根、强制 `ao=null`、进程内 dispatch、先 dispose 再删目录 |
+| `test/integration/playback.test.mjs` | L2 | ✅ 隔离无声 | **无声**（`--ao=null`）、仅临时根 | 原 `playback-test` 的 12 组断言迁移地 |
+| `npm run smoke`（`scripts/service-smoke.mjs`） | L2 | ✅ 隔离无声 | 临时根，结束删除 | 默认夹具库；真实库需 `--library … --allow-real-library`，仍只读且 `ao=null` |
+| `scripts/playback-test.mjs` | L3 | ⛔ **默认拒绝** | 改真实队列/设置/播放 | 需 `DSH_MUSIC_ALLOW_LIVE=1` + 显式 `DSH_MUSIC_API`；逻辑已迁到 L2 |
+| `scripts/loadtest.mjs` | L4 | ⛔ **默认拒绝** | 同上 + CPU 饱和 | 另需 `DSH_MUSIC_ALLOW_PERF=1`；永远不进默认流程 |
 | `scripts/probe-mpv.mjs` | — | 一次性探针 | 出声 | 建议移出仓库 |
-| `scripts/patch-probe.mjs` / `scripts/skeleton.mjs` | — | 调试遗留 | 无 | 建议移出仓库 |
-| `scripts/capture-window.ps1` / `click.ps1` / `uia.ps1` | L3 | ✅ 可用 | 无（仅截图/点击） | UI Automation 取不到元素，只能靠像素 |
+| `scripts/patch-probe.mjs` / `skeleton.mjs` | — | 调试遗留 | 无 | 建议移出仓库 |
+| `scripts/capture-window.ps1` / `click.ps1` / `uia.ps1` | L3 | ✅ 可用 | 无 | 截图/点击；UIA 取不到元素 |
 
 **缺失且优先级最高**：L1 的播放状态机测试（`lib/host/player.js` 目前零测试）。
 
 ---
 
-## 3. 禁止自动执行清单（在重构完成前）
+## 3. 默认拒绝的脚本（Phase 0B-1 起由代码强制）
 
 ```
-scripts/playback-test.mjs   ← 会改真实队列 / 设置 / 播放
-scripts/loadtest.mjs        ← 同上，且制造 CPU 压力
+scripts/playback-test.mjs   ← 需 DSH_MUSIC_ALLOW_LIVE=1 + DSH_MUSIC_API（回环 + /music/api）
+scripts/loadtest.mjs        ← 另需 DSH_MUSIC_ALLOW_PERF=1，缺任一项退出码 2
 ```
 
-原因见 §2。重构完成、迁移到隔离实例后，从本清单移除并更新此文件。
+- 两个门都在**任何 fetch / 文件读写 / 播放之前**执行；未授权路径不产生任何副作用。
+- 没有默认端口：宿主每次重启都会换，必须显式传入。
+- `test/guard.test.mjs` 用一个本地计数 HTTP 服务验证"拒绝时目标收到 0 个请求"。
+- 原 `playback-test` 的**逻辑**已迁移到 L2（`test/integration/playback.test.mjs`），
+  这个脚本只保留为真实宿主的诊断入口。
 
 ---
 
@@ -71,13 +79,20 @@ scripts/loadtest.mjs        ← 同上，且制造 CPU 压力
 
 ## 5. 各层执行方式
 
-### L1 — 单元与状态机
+### L1 — 单元与授权门
 
 ```bash
-node --test test/*.test.mjs
+npm test                       # = node --test "test/*.test.mjs"
 ```
 
-状态机测试（待建）应注入**假 engine**（记录调用序列，不启动 mpv），覆盖：
+包含：解析器 / LRC / 授权门。**不启动 mpv、不写真实状态**；
+其中授权门用例会自起一个临时回环 HTTP 服务（仅本机、仅用于断言"0 个请求"），
+**不访问真实宿主或任何外部服务**。
+
+> **生产 WASAPI 输出：`Not tested`。** 本轮只做了静态检查与 `ao=null` 的隔离测试，
+> 没有用真实音频设备播放过；不得据此宣称生产音频路径已验证。
+
+状态机测试（待建，Phase 0B-2）应注入**假 engine**（记录调用序列，不启动 mpv），覆盖：
 
 - `next/prev` 在四种模式下的目标曲与是否重载
 - 到达队尾时 `sequence` 停止 / `all` 回绕 / `shuffle` 重排 / `one` 重播
@@ -86,17 +101,21 @@ node --test test/*.test.mjs
 - 淡入淡出：`setVolume` 调用序列（淡出 → 加载 → 淡入）
 - 重复曲目时的游标定位（当前用 `indexOf`，是已知薄弱点）
 
-### L2 — Host 集成（隔离）
+### L2 — Host 集成（隔离、无声）
 
 ```bash
-node scripts/service-smoke.mjs <夹具目录或临时库根>
+npm run test:l2                # = node --test "test/integration/*.test.mjs"
+npm run smoke                  # 夹具库的完整 Host 冒烟（同样无声、隔离）
+npm run smoke -- --library <path> --allow-real-library   # 只读诊断，需显式授权
 ```
 
-要求：
+约定（由 `test/support/host.mjs` 强制）：
 
-- 进程内启动 host，`DSH_HOME` 指向临时目录，结束删除；
-- 使用 `test/fixtures/` 下的小样本，**不默认指向用户真实音乐库**；
-- 覆盖：扫描入库、API 契约（含错误参数）、持久化写读、**数据形状迁移**、mpv IPC 往返、seek 后位置一致。
+- harness **自建**唯一临时根，并覆盖 `DSH_HOME`；调用方给的值不被信任；
+- 数据库、缓存、日志、夹具全部在临时根内，结束先 `dispose()` 再删目录（带重试）；
+- mpv 用 `--ao=null`：解码、时钟、`playlist-pos`、`eof` 都照常，**不出声**；
+- 只用进程内 `service.api.dispatch`，**不开端口、不连运行中的 DSH**；
+- 工具缺失（mpv/ffprobe/ffmpeg）时 L2 **抛错而不是静默 skip**。
 
 ### L3 — 真实 DSH 宿主
 
@@ -168,6 +187,9 @@ node scripts/service-smoke.mjs <夹具目录或临时库根>
 | 2026-10-30 | Manual | `b8dc624`（v1.7） | L3 | 面板内音量滑杆 / 五键传输行 / 顺序图标 | **Passed**（截图 `artifacts/v12-crop-pop.png`） | Agent | 仅该版本该窗口尺寸 |
 | 2026-10-29 | Automated | **未记录**（v1.1–v1.2 之间） | L3（真实宿主，非隔离） | `node scripts/playback-test.mjs`（当时 11 组） | **Passed（仅代表当次运行）** | 脚本 | 不覆盖 v1.7；脚本已列入 §3 禁用清单 |
 | 2026-11-01 | Manual（静态检索） | `b8dc624`（v1.7） | — | 在 `client.js` / `lib/` / `locale/` / `scripts/` / `test/` 中检索 `waveform` / `spectrogram` / `peaks` / `thumbnail` / `sprite`，并检查 `locale/zh.json` 是否有对应文案 | **范围内未发现**（记 Passed） | Agent | **仅**证明上述范围内无对应实现；**未**做完整 UI 走查，**未**做运行期验证（`DESIGN.md` R10） |
+| 2026-11-02 | Automated | 工作区（Phase 0B-1，未提交） | L1 | `npm test` | **Passed**：16 tests / 0 fail / 606ms；无 mpv、无端口、无网络 | 脚本 | 含 6 个授权门用例；覆盖 `test/*.test.mjs` |
+| 2026-11-02 | Automated | 工作区（Phase 0B-1，未提交） | L2 | `npm run test:l2`（隔离 `DSH_HOME` + `--ao=null`） | **Passed**：14 tests / 0 fail / 24.1s；`engine.ao === 'null'`；临时根已删除 | 脚本 | 夹具 8s/3s/3s；**不覆盖**真实宿主与真实音频输出 |
+| 2026-11-02 | Automated | 工作区（Phase 0B-1，未提交） | L2 | `npm run smoke`（夹具模式） | **Passed**：21 checks / 0 fail；`temp root removed` | 脚本 | 真实库诊断模式本轮**未执行** |
 
 **关于最后一条的说明**：
 
@@ -198,12 +220,12 @@ node scripts/service-smoke.mjs <夹具目录或临时库根>
 
 ## 9. 待补的测试（按优先级）
 
-| 优先级 | 项 | 层 | 说明 |
-|---|---|---|---|
-| P0 | 播放状态机假 engine 测试 | L1 | 覆盖 §5 列出的全部转换 |
-| P0 | bundle 版本确认手段 | L3 | 没有它，所有客户端"已验证"不可信 |
-| P0 | `playback-test` 逻辑迁移到隔离 L2 | L2 | 从禁止清单中移除的前提 |
-| P1 | `package.json` 增加 `scripts`（`test` / `smoke`） | — | 降低误用与连错端口 |
-| P1 | seek 一致性、持久化迁移 | L2 | 覆盖已知风险点 |
-| P2 | 面板交互与窗口适配脚本 | L3 | 回归保护 |
-| P2 | 极端数据清单化 | L4 | 依 `break-ui` 的失败签名 |
+| 优先级 | 项 | 层 | 说明 | 状态 |
+|---|---|---|---|---|
+| P0 | 播放状态机假 engine 测试 | L1 | 覆盖 §5 列出的全部转换 | **未开始**（Phase 0B-2） |
+| P0 | bundle 版本确认手段 | L3 | 没有它，所有客户端"已验证"不可信 | 未开始 |
+| P0 | `playback-test` 逻辑迁移到隔离 L2 | L2 | 从禁止清单中移除的前提 | ✅ **已完成**（12 组断言，`test/integration/playback.test.mjs`） |
+| P1 | `package.json` 增加 `scripts`（`test` / `test:l2` / `smoke`） | — | 降低误用与连错端口 | ✅ 已完成 |
+| P1 | seek 一致性、持久化迁移 | L2 | 覆盖已知风险点 | 部分（seek 有）；迁移用例未开始 |
+| P2 | 面板交互与窗口适配脚本 | L3 | 回归保护 | 未开始 |
+| P2 | 极端数据清单化 | L4 | 依 `break-ui` 的失败签名 | 未开始 |

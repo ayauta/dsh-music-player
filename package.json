@@ -26,5 +26,12 @@
       "platform": "web",
       "immediately": true
     }
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
+    "test:l2": "node --test \"test/integration/*.test.mjs\"",
+    "smoke": "node scripts/service-smoke.mjs",
+    "test:live": "node scripts/playback-test.mjs",
+    "perf": "node scripts/loadtest.mjs"
   }
 }
