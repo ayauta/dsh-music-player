@@ -5,7 +5,7 @@
 
 > 规范看 `docs/DESIGN.md`；规则看 `AGENTS.md`。本文件不放产品决策。
 
-最后更新：2026-11-01（Phase 0 文档治理，基于 commit `b8dc624`）
+最后更新：2026-11-02（Phase 0B-2；验证对象为未提交工作区）
 
 ---
 
@@ -32,8 +32,13 @@
 
 | 资产 | 层 | 状态 | 副作用 | 备注 |
 |---|---|---|---|---|
-| `npm test`（`test/*.test.mjs`） | L1 | ✅ 安全 | 无 | 单元测试 + 授权门测试；**不启动 mpv**，只允许受控的本机测试通信（授权门用例会自起一个临时回环服务并断言收到 0 个请求），**不访问真实宿主或外部服务** |
+| `npm test`（`test/*.test.mjs`） | L1 | ✅ 安全 | 无 | 单元测试 + 状态机测试 + 授权门测试；**不启动 mpv**，只允许受控的本机测试通信（授权门用例会自起一个临时回环服务并断言收到 0 个请求），**不访问真实宿主或外部服务** |
 | `test/parser.test.mjs` / `test/lrc.test.mjs` | L1 | ✅ 安全 | 无 | 解析器与 LRC |
+| `test/player-transport.test.mjs` | L1 | ✅ 安全 | 无 | 空队列、`playQueue`、`next/prev`、`prev` 3 秒规则、四态切换不重载（8 例 = 7 回归 + 1 诊断 B11） |
+| `test/player-queue.test.mjs` | L1 | ✅ 安全 | 无 | 队列编辑保持当前曲、shuffle 起点与可达性（7 回归）+ 4 诊断：B10 / B12 / B13 / B14（共 11 例） |
+| `test/player-eof-persist.test.mjs` | L1 | ✅ 安全 | 无 | 四态 EOF、解码错误、`dispose → init` 往返、异常存档降级（10 例，全回归） |
+| `test/support/player-harness.mjs` | L1 支撑 | ✅ 安全 | 无 | 假 engine（记录命令 + 可回推事件）、假 db（Map）、`delay: () => Promise.resolve()` |
+| `test/integration/queue-api.test.mjs` | L2 | ✅ 隔离无声 | **无声**（`--ao=null`）、仅临时根 | `queue.list ↔ snapshot` 顺序与元数据一致、写操作回包一致性（7 回归）+ B14 真实 mpv 复现（1 诊断） |
 | `test/guard.test.mjs` | L1 | ✅ 安全 | 无（只起一个本地计数 HTTP 服务） | 证明危险脚本未授权时拒绝，且**目标服务器收到 0 个请求** |
 | `test/support/fixtures.mjs` | L1 支撑 | ✅ 安全 | 写临时目录 | 用 ffmpeg 生成 8s/3s/3s 夹具与封面 |
 | `test/support/host.mjs` | L2 支撑 | ✅ 隔离 | 临时 `DSH_HOME`、临时库 | 自建临时根、强制 `ao=null`、进程内 dispatch、先 dispose 再删目录 |
@@ -45,7 +50,36 @@
 | `scripts/patch-probe.mjs` / `skeleton.mjs` | — | 调试遗留 | 无 | 建议移出仓库 |
 | `scripts/capture-window.ps1` / `click.ps1` / `uia.ps1` | L3 | ✅ 可用 | 无 | 截图/点击；UIA 取不到元素 |
 
-**缺失且优先级最高**：L1 的播放状态机测试（`lib/host/player.js` 目前零测试）。
+**已补齐**：L1 播放状态机测试（Phase 0B-2，`test/player-*.test.mjs`，29 例）。
+
+### 2.1 回归测试 vs 诊断测试（必读）
+
+测试全绿**不等于**缺陷已修。本仓库的测试分两类，语义不同：
+
+| 类别 | 命名 | 通过意味着 | 失败意味着 | 谁来改 |
+|---|---|---|---|---|
+| **Regression**（回归） | 普通用例名 | 该行为仍然正确 | **回归**，必须停下来查 | 修代码，不改断言 |
+| **Diagnostic / Known Behavior**（已知问题诊断） | 前缀 `DIAGNOSTIC (known behaviour, Bxx):` | 该缺陷**仍可复现** | 行为已变化：要么缺陷被修了，要么变了形态 | 若缺陷已修：**改写成正确行为的回归断言**并关闭 Bxx；若只是变了形态：更新登记 |
+
+`DIAGNOSTIC (pending decision, Bxx):` 是第三种：行为尚无产品裁定，用例只记录现状，**不得**被读成"验收通过"。
+
+当前诊断用例清单（**均为预期通过，且都不代表需求已满足**）：
+
+| 用例 | 缺陷 | 断言的是什么现状 |
+|---|---|---|
+| `test/player-transport.test.mjs` · DIAGNOSTIC (B11) | B11 | 播放中切单曲循环不裁 mpv 镜像尾 |
+| `test/player-queue.test.mjs` · DIAGNOSTIC (B10) | B10 | shuffle 下 `enqueue{next}` 落错位置 |
+| `test/player-queue.test.mjs` · DIAGNOSTIC (pending decision, B12) | B12 | 删当前曲回到队首 |
+| `test/player-queue.test.mjs` · DIAGNOSTIC (B13) | B13 | 重复曲游标跳到第一份拷贝 |
+| `test/player-queue.test.mjs` · DIAGNOSTIC (B14) | B14 | `queue.set` 之后 `trackId` 与 mpv 实际文件不一致 |
+| `test/integration/queue-api.test.mjs` · DIAGNOSTIC (B14, real mpv) | B14 | 同上，真实 mpv 证据 |
+
+规则：
+
+1. **不得删除**诊断用例；修好缺陷时把它改名并改成正确行为断言（同一提交内完成）。
+2. 诊断用例**不得**计入任何"功能验收 Passed"。
+3. 报告测试结果时必须分开写：`回归 N 通过 / 诊断 M 通过（仅代表可复现）`。
+4. 诊断用例失败时，先判断是"缺陷被修"还是"行为换了形态"，不要直接改断言让它变绿。
 
 ---
 
@@ -92,14 +126,17 @@ npm test                       # = node --test "test/*.test.mjs"
 > **生产 WASAPI 输出：`Not tested`。** 本轮只做了静态检查与 `ao=null` 的隔离测试，
 > 没有用真实音频设备播放过；不得据此宣称生产音频路径已验证。
 
-状态机测试（待建，Phase 0B-2）应注入**假 engine**（记录调用序列，不启动 mpv），覆盖：
+**状态机测试（Phase 0B-2 已建）**：`test/player-*.test.mjs`，用假 engine（记录命令、可回推事件）
++ 假 db + 注入的 `delay`/`random`，**不启动 mpv、不等待淡变**。当前覆盖：
 
-- `next/prev` 在四种模式下的目标曲与是否重载
-- 到达队尾时 `sequence` 停止 / `all` 回绕 / `shuffle` 重排 / `one` 重播
-- `setMode` 不触发重载（断言 engine 调用次数）
-- 队列编辑（enqueue/remove/move/set）后游标是否仍指向同一首
-- 淡入淡出：`setVolume` 调用序列（淡出 → 加载 → 淡入）
-- 重复曲目时的游标定位（当前用 `indexOf`，是已知薄弱点）
+- `next/prev` 在四种模式下的目标曲与是否重载；`prev` 的 3 秒规则
+- 到达队尾时 `sequence` 停止 / `all` 回绕 / `shuffle` 重排 / `one` 重播（手动与 EOF 两条路径分开测）
+- `setMode` 不触发重载（断言 engine 的 `load` 次数）
+- 队列编辑（enqueue/remove/move/setQueue）后当前曲与位置是否保持
+- 重复曲目时的游标定位（当前用 `indexOf`，已知薄弱点，见 `LIMITATIONS.md` B13）
+- `dispose → init` 往返与异常存档降级
+
+未覆盖、也不打算在 L1 覆盖：淡变的听感与真实时序、mpv 的无缝推进竞态（L2）、UI 高亮（L3）。
 
 ### L2 — Host 集成（隔离、无声）
 
@@ -187,9 +224,12 @@ npm run smoke -- --library <path> --allow-real-library   # 只读诊断，需显
 | 2026-10-30 | Manual | `b8dc624`（v1.7） | L3 | 面板内音量滑杆 / 五键传输行 / 顺序图标 | **Passed**（截图 `artifacts/v12-crop-pop.png`） | Agent | 仅该版本该窗口尺寸 |
 | 2026-10-29 | Automated | **未记录**（v1.1–v1.2 之间） | L3（真实宿主，非隔离） | `node scripts/playback-test.mjs`（当时 11 组） | **Passed（仅代表当次运行）** | 脚本 | 不覆盖 v1.7；脚本已列入 §3 禁用清单 |
 | 2026-11-01 | Manual（静态检索） | `b8dc624`（v1.7） | — | 在 `client.js` / `lib/` / `locale/` / `scripts/` / `test/` 中检索 `waveform` / `spectrogram` / `peaks` / `thumbnail` / `sprite`，并检查 `locale/zh.json` 是否有对应文案 | **范围内未发现**（记 Passed） | Agent | **仅**证明上述范围内无对应实现；**未**做完整 UI 走查，**未**做运行期验证（`DESIGN.md` R10） |
-| 2026-11-02 | Automated | 工作区（Phase 0B-1，未提交） | L1 | `npm test` | **Passed**：16 tests / 0 fail / 606ms；无 mpv、无端口、无网络 | 脚本 | 含 6 个授权门用例；覆盖 `test/*.test.mjs` |
-| 2026-11-02 | Automated | 工作区（Phase 0B-1，未提交） | L2 | `npm run test:l2`（隔离 `DSH_HOME` + `--ao=null`） | **Passed**：14 tests / 0 fail / 24.1s；`engine.ao === 'null'`；临时根已删除 | 脚本 | 夹具 8s/3s/3s；**不覆盖**真实宿主与真实音频输出 |
-| 2026-11-02 | Automated | 工作区（Phase 0B-1，未提交） | L2 | `npm run smoke`（夹具模式） | **Passed**：21 checks / 0 fail；`temp root removed` | 脚本 | 真实库诊断模式本轮**未执行** |
+| 2026-11-02 | Automated | 工作区（后提交为 `18e8cf5`） | L1 | `npm test` | **Passed**：16 tests / 0 fail / 606ms；不启动 mpv，不访问真实宿主或外部网络（6 个授权门用例各自起一个临时回环 HTTP 服务，只用于断言"收到 0 个请求"） | 脚本 | 含 6 个授权门用例；覆盖当时的 `test/*.test.mjs` |
+| 2026-11-02 | Automated | 工作区（后提交为 `18e8cf5`） | L2 | `npm run test:l2`（隔离 `DSH_HOME` + `--ao=null`） | **Passed**：14 tests / 0 fail / 24.1s；`engine.ao === 'null'`；临时根已删除 | 脚本 | 夹具 8s/3s/3s；**不覆盖**真实宿主与真实音频输出 |
+| 2026-11-02 | Automated | 工作区（后提交为 `18e8cf5`） | L2 | `npm run smoke`（夹具模式） | **Passed**：21 checks / 0 fail；`temp root removed` | 脚本 | 真实库诊断模式本轮**未执行** |
+| 2026-11-02 | Automated | 工作区（Phase 0B-2，未提交） | L1 | `npm test`（含新增 `test/player-*.test.mjs`） | **Passed**：45 tests / 0 fail / 640ms；无 mpv、无淡变等待 | 脚本 | 29 例状态机测试；假 engine + 注入 `delay`/`random`；**不覆盖**真实 mpv 时序 |
+| 2026-11-02 | Automated | 工作区（Phase 0B-2，未提交） | L2 | `npm run test:l2`（新增 `queue-api.test.mjs`） | **Passed**：22 tests / 0 fail / 24.4s；`ao=null`；临时根已删除 | 脚本 | 队列两次读取的一致性；B14 在真实 mpv 下复现；**不覆盖**真实音频输出与真实宿主 |
+| 2026-11-02 | Automated | 工作区（Phase 0B-2，未提交） | L2 | `npm run smoke`（夹具模式） | **Passed**：21 checks / 0 fail；`temp root removed` | 脚本 | 仅回归确认，未新增断言 |
 
 **关于最后一条的说明**：
 
