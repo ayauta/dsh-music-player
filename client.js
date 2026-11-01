@@ -18,6 +18,13 @@
 window.__ModuleLoader__.load({
   id: '@local/dsh-music',
   factory(require) {
+    // Identity of this file's content: SHA-256 over this source with the line
+    // below removed, so stamping is a fixed point. Refresh it with
+    // `node scripts/bundle-id.mjs --write`; `npm test` fails while it is stale.
+    // Module scope on purpose: bundles are concatenated into one classic script,
+    // where a top-level `const` would collide with another module's.
+    const BUNDLE_ID = 'dshm-67b0677998e1' // dsh-music-bundle-id
+
     const React = require('react')
     const { useState, useEffect, useRef, useCallback, useSyncExternalStore } = React
     const h = React.createElement
@@ -2367,6 +2374,30 @@ window.__ModuleLoader__.load({
     return {
       inject: ['slots', 'locale', 'layout', 'uiWorkspace'],
       apply(ctx) {
+        /**
+         * Bundle identity, written on the activation path and removed with this
+         * fiber. It declares exactly one thing: this module's `apply()` ran —
+         * i.e. the page executed the bundle carrying this id. It does NOT mean
+         * the slots are registered, mounted, or rendering; those are separate
+         * facts (see docs/TESTING.md §2.2).
+         */
+        ctx.effect(() => {
+          const root = document.documentElement
+          // Ownership is a per-activation token, not the id: an HMR re-apply
+          // reuses the same id, and a later activation may already hold the
+          // marker when an older disposer runs. Only the current owner clears it.
+          const owner = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+          root.dataset.dshMusicBundle = BUNDLE_ID
+          root.dataset.dshMusicBundlePhase = 'plugin-active'
+          root.dataset.dshMusicBundleOwner = owner
+          return () => {
+            if (root.dataset.dshMusicBundleOwner !== owner) return
+            delete root.dataset.dshMusicBundle
+            delete root.dataset.dshMusicBundlePhase
+            delete root.dataset.dshMusicBundleOwner
+          }
+        }, 'dsh-music bundle identity')
+
         const bound = ctx.locale.bind(NS)
         translate = (key) => bound(key)
 
