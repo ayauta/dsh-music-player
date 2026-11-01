@@ -23,7 +23,7 @@ window.__ModuleLoader__.load({
     // `node scripts/bundle-id.mjs --write`; `npm test` fails while it is stale.
     // Module scope on purpose: bundles are concatenated into one classic script,
     // where a top-level `const` would collide with another module's.
-    const BUNDLE_ID = 'dshm-67b0677998e1' // dsh-music-bundle-id
+    const BUNDLE_ID = 'dshm-ab394dbf0ec0' // dsh-music-bundle-id
 
     const React = require('react')
     const { useState, useEffect, useRef, useCallback, useSyncExternalStore } = React
@@ -785,10 +785,14 @@ window.__ModuleLoader__.load({
     class ErrorBoundary extends React.Component {
       constructor(props) {
         super(props)
-        this.state = { failed: false }
+        this.state = { failed: false, message: '' }
       }
 
-      static getDerivedStateFromError() { return { failed: true } }
+      // Keep the message: the fallbacks in this file render text, and an empty
+      // box is indistinguishable from "nothing was supposed to be here".
+      static getDerivedStateFromError(error) {
+        return { failed: true, message: String(error?.message ?? error ?? 'render failed') }
+      }
 
       componentDidCatch(error) {
         try { console.error('[dsh-music] render failed', error) } catch { /* no console */ }
@@ -796,7 +800,11 @@ window.__ModuleLoader__.load({
 
       render() {
         if (!this.state.failed) return this.props.children
-        return this.props.fallback ?? null
+        // Two call shapes exist in this file: `fallback` (an element) and
+        // `makeFallback(message)` (a function). Both are honoured; reading only
+        // `fallback` silently rendered null and made a crash look like empty space.
+        const fallback = this.props.fallback ?? this.props.makeFallback
+        return typeof fallback === 'function' ? fallback(this.state.message) : (fallback ?? null)
       }
     }
 
@@ -823,7 +831,10 @@ window.__ModuleLoader__.load({
     function Cover({ track, albumKey, size, radius = 8, trackId }) {
       const [failed, setFailed] = useState(false)
       const id = track?.id ?? trackId ?? null
-      const source = id !== null && (track === undefined || track.hasCover !== false)
+      // `track` may legitimately be null when the caller only knows an id (the
+      // queue rows do exactly that). Only an explicit `hasCover: false` means
+      // "no cover"; absent information still points at the cover route.
+      const source = id !== null && track?.hasCover !== false
         ? `/music/cover?id=${encodeURIComponent(id)}&v=${track?.mtimeMs ?? 0}`
         : albumKey !== null && albumKey !== undefined
           ? `/music/cover?album=${encodeURIComponent(albumKey)}`
