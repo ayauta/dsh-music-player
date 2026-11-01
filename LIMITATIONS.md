@@ -32,6 +32,8 @@
 | **B12** | 删除正在播放的条目会回到队首，而不是顺延到下一首 | **待产品裁定的交互行为**，不是已确认缺陷 | `test/player-queue.test.mjs`「DIAGNOSTIC (pending decision, B12)」 | 待产品裁定（修 / 不修 / 补规范） |
 | **B13** | 重复曲目时 `indexOf` 命中第一条：编辑队列后游标跳到第一份拷贝 | **已复现缺陷**：队列条目身份 / 游标一致性（见 `DECISIONS.md` D-09） | `test/player-queue.test.mjs`「DIAGNOSTIC (known behaviour, B13)」 | 已复现，修法未定 |
 | **B14** | `queue.set` 丢掉当前曲时不重载：`trackId` 指向新队首，mpv 仍播旧文件，同一份 snapshot 自相矛盾 | **已复现缺陷（高优先级）**：播放状态一致性；L1 与 L2 均有证据 | `test/player-queue.test.mjs` + `test/integration/queue-api.test.mjs`（DIAGNOSTIC, real mpv） | 已复现，待影响分析 |
+| **B15** | 队列视图标题把整库曲目数当成队列长度（`view='queue'` 也发给 `library.list`，Host 走 default 分支返回整库） | 标题显示「85 首」而队列实际 6 首，用户无法判断队列规模 | B1 修复后截图 `%TEMP%\b1-l3-queue.png`：标题 85、队列行计数 6 | 已登记，待修（客户端少发一次请求 + 标题取队列长度） |
+| **B16** | 队列视图高亮行与实际播放曲目不一致（`snapshot().cursor` 索引 `plays`，UI 拿它当 `queue` 下标） | 当前曲高亮到别的行；与 B10/B13 同源（下标空间混用） | 截图 `%TEMP%\b1-l3-queue.png`：高亮「簪花记」，迷你行在放「汀兰驭飞」 | 已登记，待修（与 B10/B13 一并裁定） |
 
 > **关于 B2**：早期把"客户端 bundle 只在宿主启动时加载"记作缺陷 B2；它其实是**宿主约束**
 > 而非本插件的缺陷，现已归入 [`ARCHITECTURE.md`](ARCHITECTURE.md) §8 约束 2。

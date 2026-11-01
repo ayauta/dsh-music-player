@@ -61,7 +61,7 @@
 
 | # | 问题 | 差异类型 | 影响 | 证据 | 状态 |
 |---|---|---|---|---|---|
-| **B1** | 音乐库「播放队列」一栏**渲染空白**（标题显示曲目数，内容区纯白） | Regression / Defect | 队列不可用；R07 无法验收 | 探针确认：分支执行、收到 41 条、纯 div 可渲染，`overflow:auto` 容器不可；改用 `.dshm-list` 后**未验证** | **未解决** |
+| **B1** | 音乐库「播放队列」一栏**渲染空白**（标题显示曲目数，内容区纯白） | Regression / Defect（**已修，L3 通过**） | 队列不可用；R07 无法验收 | **根因**：`QueuePanel` 以 `track: null` 调 `Cover`，`Cover` 在该路径读 `track.hasCover` → 首行抛 `TypeError`；而 `ErrorBoundary` 只读 `props.fallback`、两处调用点传的却是 `makeFallback` → 渲染 `null`，所以异常表现为"纯空白"而非报错。旧探针"纯 div 可渲染 / `.dshm-list` 不行"是把异常路径误读成了布局问题 | **已修**；2026-11-02 重启后 L3 通过：队列 6 行可见，`dshm-ab394dbf0ec0` 三方一致。**仍缺**：空队列状态 `Not tested`；"控制台无错误"只有间接证据（未直读 Console） |
 | **B3** | 播放模式仍是两个按钮（随机 + 循环三态） | Implementation Gap | 与 R08 不符 | `client.js` 传输行 | 待排期 |
 | **B4** | 面板内没有队列视图 | Implementation Gap | 与 R06 不符 | 队列按钮打开音乐库 | 待排期 |
 | **B5** | Windows 媒体键未实现、路径未验证 | Implementation Gap | R11 `Not tested` | 见 `DECISIONS.md` D-07 | 待调查 |
@@ -70,6 +70,8 @@
 | **B12** | 删除正在播放的队列条目会回到队首（而不是顺延到下一首） | **待产品裁定的交互行为**（不是已确认缺陷） | 与用户直觉不符，但无 Approved 条目 | 见 `LIMITATIONS.md` §一 B12 | 待裁定 |
 | **B13** | 重复曲目时 `indexOf` 命中第一条，编辑队列后游标跳到第一份拷贝 | **已复现缺陷**：队列条目身份 / 游标一致性 | 队列高亮与"清空后续"可能作用在错误条目 | 见 `LIMITATIONS.md` §一 B13 | 已复现，修法未定 |
 | **B14** | `queue.set` 丢掉当前曲时不重载：`trackId` 指向新队首，mpv 仍在播旧文件（同一份 snapshot 自相矛盾） | **已复现缺陷（高优先级）**：播放状态一致性，L1 + L2 双证据 | 现有 UI 只在含当前曲时调用，故未在界面暴露；`queue.set` 是公开 op | 见 `LIMITATIONS.md` §一 B14 | 已复现，待影响分析 |
+| **B15** | 队列视图标题把整库曲目数当成队列长度 | **UI 缺陷**（不影响播放） | 标题「85 首」vs 队列 6 首，误导规模判断 | 见 `LIMITATIONS.md` §一 B15 | 待处理 |
+| **B16** | 队列高亮行与实际播放曲目不一致（`cursor` 索引 `plays`） | **UI 缺陷**（与 B10/B13 同源） | 高亮错行 | 见 `LIMITATIONS.md` §一 B16 | 待处理（与 B10/B13 一并裁定） |
 
 > **约束（原 B2）**：客户端 bundle 只在宿主启动时加载——这是**宿主约束**，已归入
 > [`ARCHITECTURE.md`](../ARCHITECTURE.md) §8 约束 2；B2 编号不再复用。
@@ -86,7 +88,7 @@
 | 按压反馈（`scale` + tint） | `b8dc624` | 需要真实指针与肉眼判读 |
 | 迷你行悬停几何（去出血、无阴影） | `b8dc624` | 用户尚未复验 |
 | 进度条"乐观定位"（防回弹） | `b8dc624` | 需要录屏/慢放判读 |
-| 队列容器改用 `.dshm-list` | `b8dc624` | 生效需要重启 DSH；至今未在屏幕上确认 |
+| 队列容器改用 `.dshm-list` | `b8dc624` | **已作废**：B1 的根因是渲染抛错，不是容器（见 §3 B1）；该改动本身无需再单独验收 |
 | 自适应窗口尺寸下的面板钳制 | 历代 | 只做过一次失败尝试（窗口最大化时 `SetWindowPos` 无效） |
 
 Phase 0B-2 新增的**部分验证**项：
@@ -115,7 +117,7 @@ Phase 0B-3（Bundle ID）的取证状态——2026-11-02 02:09 用户重启后�
 - 2026-11-02 / Phase 0B-3 工作区 / L1 / `npm test` → **Passed** 55（45 既有 + 10 Bundle ID）
 - 2026-11-02 / Phase 0B-3 工作区 / L2 / `npm run test:l2` → **Passed** 22
 - 2026-11-02 / Phase 0B-3 工作区 / L2 / `npm run smoke` → **Passed** 21 checks
-- 2026-11-02 / **用户重启后** / L3 / F12 读 `data-dsh-music-bundle` → **Passed**（`dshm-67b0677998e1`，仅代表激活点）
+- 2026-11-02 / **用户重启后** / L3 / 打开「播放队列」→ **Passed**（6 行可见；`dshm-ab394dbf0ec0` 源码/served/运行时三方一致）
 
 历史基线：
 
@@ -126,13 +128,13 @@ Phase 0B-3（Bundle ID）的取证状态——2026-11-02 02:09 用户重启后�
 
 ## 6. 下一步（按顺序）
 
-1. **审核 Phase 0B-3**（本轮，未提交）：`scripts/bundle-id.mjs`、`test/bundle-id.test.mjs`、
-   `client.js` 的激活标记、文档
-2. **Phase 0B-3 的 L3 取证**（需重启 DSH）：F12 读 `data-dsh-music-bundle` → `--runtime` 比对；
-   Inspector 复核四个 slot；记录可见状态（本轮全部 `Not tested`）
-3. **Phase 0B-2 的四个提交**：`208023c` / `34defc6` / `38f4faa` / 文档提交已入库，打
-   `baseline-v1.7.0`（指向 `b8dc624`）仍待定
-4. **候选 A 单独审查**：镜像计划深模块，属状态机高风险改动，需影响分析；前置条件已具备
+1. **审核 B1 修复**（本轮，未提交）：`client.js` 两处（`Cover` 空值安全 + 错误降级契约）、
+   `test/client-source.test.mjs`、文档
+2. **B1 的空队列状态未验收**：需要在真实界面清空队列（会删掉待播列表），本轮未动
+3. **B15 / B16**：队列标题的曲目数取整库、高亮行取错了下标空间——已登记，未修
+4. **Phase 0B-2/0B-3 已入库**：`208023c` / `34defc6` / `38f4faa` / `3363e2e` / `537c39b`；
+   打 `baseline-v1.7.0`（指向 `b8dc624`）仍待定
+5. **候选 A 单独审查**：镜像计划深模块，属状态机高风险改动，需影响分析；前置条件已具备
 5. **B1 队列空白**：F12 看是否有 `[dsh-music] render failed`——有＝渲染抛错，无＝容器/空子树
 6. **缺陷裁定**：B10 / B12 / B13 / B14 逐个给结论（修 / 不修 / 改规范）；B11 先补 L2 复验
 7. **R06 / R08**：面板内队列视图 + 单按钮四态（纯客户端）
@@ -268,8 +270,27 @@ served 126 965 字节内容相同、served id 相同、host release `0.2.1-rc.5 
 
 **Phase 0B-3 没有做 / 未验证**
 
-- **运行时 ID 已在真实重启后观测**（F12，`dshm-67b0677998e1`）；**未验证**：
-  音乐库 / 队列页是否正常（B1 未观察）、owner 保护在真实卸载路径下的行为（rc.5 顺序不会触发）
+- 运行时 ID 已在两次真实重启后观测（`dshm-67b0677998e1`、`dshm-ab394dbf0ec0`）
+- 未验证：owner 保护在真实卸载路径下的行为（rc.5 的 HMR 顺序不会触发）
+
+**B1 修复（工作区未提交）**
+
+- 复现（真实 DSH，HMR 之前）：点「音乐」→「播放队列」，标题与工具栏正常、内容区全白且无任何文字
+- 根因两级：
+  1. `QueuePanel` 用 `track: null` 调 `Cover`（只给 id），`Cover` 在此路径读 `track.hasCover`
+     → 首行抛 `TypeError: Cannot read properties of null (reading 'hasCover')`
+  2. `ErrorBoundary` 只读 `props.fallback`，两处调用点传的是 `makeFallback` → 渲染 `null`
+     → 崩溃表现为"纯白"，而不是红字
+- 修复：`Cover` 改为 `track?.hasCover !== false`（只给 id 是它支持的用法）；
+  `ErrorBoundary` 同时接受 `fallback` 与 `makeFallback(message)`，并把 `error.message` 交给降级文案
+- 诊断过程留证：仅修降级契约后，界面出现
+  `播放队列: Cannot read properties of null (reading 'hasCover')` —— 异常路径由此确证
+- 新增 `test/client-source.test.mjs`（3 例静态守卫：`Cover` 不得解引用可空 `track`；
+  `ErrorBoundary` 必须支持两种 fallback；所有调用点必须使用其中之一）
+- 实测：`npm test` **58/58**；`test:l2` **22/22**；`smoke` 21 项；`bundle-id` = `dshm-ab394dbf0ec0`
+- **L3（2026-11-02 重启后）通过**：F12 `dshm-ab394dbf0ec0`、`--served` rev `0d9847268425`
+  内容一致、队列 6 行可见、迷你行与「全部歌曲」无回归
+- 未做：空队列状态验收（需清空真实队列）、B10–B14、R06/R08、任何 API/状态机改动
 - 编辑 `client.js` 会让 `client-hmr` 在 ≤500 ms 内热替换运行中模块（本轮发生了，rev 已变），
   但这**不算** L3 验证——热替换不是重启，也不代表四个 slot 重新注册成功
 - 未改四个 slot 的 register/inject、未动 `immediately`、未改 `ErrorBoundary`、未修 B1、
