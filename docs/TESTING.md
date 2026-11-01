@@ -319,6 +319,7 @@ npm run smoke -- --library <path> --allow-real-library   # 只读诊断，需显
 | 2026-11-02 | Automated | 初版修复 vs `b02ec77` 基线（B10 复核） | L1 | `git stash push -- lib/host/player.js` 后复跑 `node --test test/player-queue.test.mjs` | **基线通过、初版失败**：`play next lands after the playing copy when the queue repeats a track`（`[a,b,a]` 播第三项时初版给出 `[a,x,b,a]`，基线为 `[a,b,a,x]`） | 脚本 | 证明该插入位置差异由初版引入；调整后两侧都通过 |
 | 2026-11-02 | Automated | 工作区（B10 修复，未提交） | L2 | `npm run test:l2`（隔离 mpv） | **Passed**：23 tests / 0 fail；新增 `B10: play next opens the enqueued file (real mpv, shuffle)` 断言 mpv 打开的就是刚插入曲目的路径 | 脚本 | 真实 mpv 确认打开的是刚插入的文件；**不**覆盖 UI 高亮（B16） |
 | 2026-11-02 | Automated | 工作区（B10 修复，未提交） | L2 | `npm run smoke` | **Passed**：21 checks / 0 fail；`temp root removed` | 脚本 | 仅回归 |
+| 2026-11-02 | **Manual** | `4abd9e8`（Host 侧修复）；重启后实例 `0.2.1-rc.5 / d4db512`，端口 56586 | L3 | 用户重启 DSH（窗口进程 02:45:13 启动，晚于 `player.js` 修改时间 02:40:56）后，在随机播放下执行「下一首播放」再点「下一首」 | **Passed（用户口述）**：用户反馈"修好了"；**未记录**当时播放的曲目名、被插入的曲目名与实际出声曲目 | 用户 | 仅代表该次人工操作的用户判断；若需可复核的记录，补一行"A→X→实际播 X"即可 |
 
 **关于最后一条的说明**：
 
