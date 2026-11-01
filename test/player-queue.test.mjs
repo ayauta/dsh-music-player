@@ -161,23 +161,27 @@ test('shuffle never leaves the queue when stepping forward', async (t) => {
   assert.deepEqual([...seen].sort(), ['a', 'b', 'c'], 'every entry is reachable under shuffle')
 })
 
-test('DIAGNOSTIC (known behaviour, B10): enqueue next is misplaced while shuffled', async (t) => {
-  // Registered as B10. The cursor indexes the shuffled `plays` order while
-  // `enqueue` splices the user-visible `queue`, so "play next" lands at the
-  // wrong offset and the following rebuild reshuffles anyway. Characterization
-  // only — the fix is a state-machine change with its own impact analysis.
-  const h = await createPlayerHarness(t, { tracks: ALL, random: () => 0 })
-  await h.player.setMode('shuffle')
-  await h.player.playQueue(['a', 'b', 'c'], 0)
-  assert.equal(h.snap().trackId, 'a', 'current track before the edit')
-  assert.equal(h.snap().cursor, 2, 'the current entry sits at the end of the shuffled order')
+test('play next plays the enqueued track in every mode', async (t) => {
+  // B10 regression. The acceptance rule is about the file that reaches mpv, not
+  // just about the entry appearing in the queue: playing A, "play next" X, then
+  // pressing next must open X. Shuffle used to fail here because the cursor
+  // indexes `plays` while the insert used that index on `queue`, after which the
+  // rebuild reshuffled the entry away.
+  for (const mode of ['sequence', 'all', 'one', 'shuffle']) {
+    const h = await createPlayerHarness(t, { tracks: ALL, random: () => 0 })
+    await h.player.setMode(mode)
+    await h.player.playQueue(['a', 'b', 'c'], 0)
+    assert.equal(h.snap().trackId, 'a', `${mode}: starts on the picked entry`)
 
-  await h.player.enqueue(['d'], 'next')
+    await h.player.enqueue(['d'], 'next')
+    assert.deepEqual(h.snap().queue, ['a', 'd', 'b', 'c'], `${mode}: the entry sits right after the current one`)
 
-  const snap = h.snap()
-  assert.deepEqual(snap.queue, ['a', 'b', 'c', 'd'], 'the entry landed at the tail of the user queue')
-  assert.notEqual(snap.queue[1], 'd', 'it is not next to the current track, so "play next" was not honoured')
-  assert.equal(snap.trackId, 'a', 'the current track itself was preserved')
+    await h.player.next()
+    assert.equal(h.snap().trackId, 'd', `${mode}: the enqueued entry is the next one`)
+    assert.equal(h.engine.state.currentFile, h.pathOf('d'), `${mode}: mpv actually opened the enqueued file`)
+
+    await h.dispose()
+  }
 })
 
 test('DIAGNOSTIC (known behaviour, B13): a duplicate entry takes the cursor of the first copy', async (t) => {
@@ -194,4 +198,22 @@ test('DIAGNOSTIC (known behaviour, B13): a duplicate entry takes the cursor of t
   assert.deepEqual(h.snap().queue, ['b', 'a', 'a'])
   assert.equal(h.snap().trackId, 'a', 'the same id is still current')
   assert.equal(h.snap().cursor, 1, 'but the cursor jumped to the first copy of that id')
+})
+
+test('play next lands after the playing copy when the queue repeats a track', async (t) => {
+  // Non-shuffle: `plays` mirrors `queue`, so the cursor *is* the queue index and
+  // the insertion point stays exact even when the current id appears twice.
+  // An id lookup would find the first copy instead (that is B13's identity gap,
+  // which is not being fixed here).
+  const h = await createPlayerHarness(t, { tracks: ALL })
+  await h.player.setMode('sequence')
+  await h.player.playQueue(['a', 'b', 'a'], 0)
+  await h.player.next()
+  await h.player.next()
+  assert.equal(h.snap().cursor, 2, 'the second copy of "a" (index 2) is playing')
+
+  await h.player.enqueue(['x'], 'next')
+
+  assert.deepEqual(h.snap().queue, ['a', 'b', 'a', 'x'],
+    'the entry landed after the playing copy, not after the first one')
 })

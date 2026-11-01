@@ -132,4 +132,24 @@ test('queue reads and write results agree (isolated, silent)', { timeout: 120000
     assert.equal(engine.currentFile, b.path, 'while mpv is still playing the dropped track')
     assert.notEqual(player.trackPath, engine.currentFile, 'the two fields in one snapshot contradict each other')
   })
+
+  await t.test('B10: play next opens the enqueued file (real mpv, shuffle)', async () => {
+    // The acceptance rule is about the file mpv opens, not about the queue array:
+    // playing A, "play next" C, press next -> C must be the sound.
+    await call('player.mode', { mode: 'shuffle' })
+    await call('queue.play', { ids: [a.id, b.id, c.id], startIndex: 0 })
+    assert.equal(await waitForEngineFile(a.path), true, 'mpv opened the first track')
+
+    await call('queue.enqueue', { ids: [c.id], position: 'next' })
+
+    const queued = (await status()).player
+    assert.equal(queued.queue[queued.queue.indexOf(a.id) + 1], c.id, 'the entry sits right after the current one')
+
+    await call('player.next')
+    assert.equal(await waitForEngineFile(c.path), true, 'mpv opened the enqueued file')
+
+    const after = (await status()).player
+    assert.equal(after.trackId, c.id, 'the snapshot agrees with the file that is playing')
+    assert.equal(after.trackPath, c.path, 'and so does the reported path')
+  })
 })
