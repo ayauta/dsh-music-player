@@ -17,7 +17,7 @@
 | 当前 HEAD | 以 `git log -1` 为准；本轮最后一个是本文件所在的**文档提交**（不改变代码） |
 | 版本 | `package.json` → `1.7.0`（本轮未变） |
 | 标签 | **无**。计划中的 `baseline-v1.7.0` **必须指向 `b8dc624`**；打标签是单独的 Git 操作，尚未执行 |
-| 工作区 | 提交后应为 clean。Phase 0B-2 的代码与测试已入库：`208023c` / `34defc6` / `38f4faa`；文档随第 4 个提交入库 |
+| 工作区 | Phase 0B-3 改动，**未提交**：新增 `scripts/bundle-id.mjs`、`test/bundle-id.test.mjs`；修改 `client.js`（标记常量 + `apply` 内一处 `ctx.effect`）、`docs/TESTING.md`、本文件。Phase 0B-2 的代码与测试已在库：`208023c` / `34defc6` / `38f4faa` |
 
 已提交的治理与测试基线：
 
@@ -51,6 +51,9 @@
   整批 45 例仍约 650ms，与改动前 16 例的 606–697ms 同一量级）与
   **L2 队列一致性测试**（8 例 = 7 回归 + 1 诊断，隔离 host、`ao=null`）
   ——见 `docs/TESTING.md` §2、§2.1
+- **Bundle ID 取证**：`scripts/bundle-id.mjs`（源码指纹 / 宿主 served 字节 / 运行时 ID 三方比对）
+  + `test/bundle-id.test.mjs`（9 例）。运行时标记由 `apply(ctx)` 的 `ctx.effect` 写入
+  `<html data-dsh-music-bundle>`，随 fiber 卸载删除 —— 见 `docs/TESTING.md` §2.2
 
 ---
 
@@ -94,15 +97,25 @@ Phase 0B-2 新增的**部分验证**项：
 | B12 删除当前曲回到队首（**待产品裁定**） | L1 行为已锁定 | 产品意图（`DESIGN.md` 无对应条目）；测试通过不能代替裁定 |
 | B14 `queue.set` 失步（**已复现的高优先级缺陷**） | L1 + L2（真实 mpv 确认 `trackId` 与 `engineFile` 矛盾） | 未修；修复需影响分析 |
 
+Phase 0B-3（Bundle ID）的取证状态——2026-11-02 02:09 用户重启后核对：
+
+| 项 | 状态 | 证据 / 缺口 |
+|---|---|---|
+| 当前客户端激活 ID（`data-dsh-music-bundle`） | **已观测（L3 通过）** | 用户在 F12 Console 读到 `{bundle: "dshm-67b0677998e1", phase: "plugin-active"}`，与源码 ID 一致；`--runtime` 复核 exit 0。旁证：进程启动 02:09:04 晚于最后一次编辑 02:06:52、artifact rev `bf6085bd2344` 与 Host 一致、错 rev 返回 404、Electron 对 `/plugins/*` 强制 `no-store` |
+| Inspector 的四个 slot 注册与 `active` | **已核对（重启后）** | `sidebar.footer.action`→`dsh-music`(10)、`sidebar.panellist`→`music`(25)、`main`→`music`、`settings.section`→`dsh-music`(70)，全部 `active: true` |
+| 实际可见组件状态 | **部分已核对** | 截图 `C:\Users\andy\AppData\Local\Temp\dsh-music-l3.png`：侧栏底部迷你行渲染出真实曲目「汀兰驭飞 / 兰音 Reine」与三键传输行；侧栏「音乐」入口可见。**未打开**音乐库/队列页，B1 仍未观察 |
+| `active:true` 是否等于渲染正常 | **已证否**（rc.5 源码 + 本插件 `guardedCell` 在内侧先接住异常） | — | 见 `docs/TESTING.md` §2.2 的判读规则 |
+
 ---
 
 ## 5. 验证记录摘要
 
-完整表在 `docs/TESTING.md` §8。最近三条（Phase 0B-2 工作区，未提交）：
+完整表在 `docs/TESTING.md` §8。最近四条（Phase 0B-3 工作区，未提交）：
 
-- 2026-11-02 / 工作区（内容 = `34defc6`）/ L1 / `npm test` → **Passed** 45（40 回归 + 5 诊断）
-- 2026-11-02 / 工作区（内容 = `38f4faa`）/ L2 / `npm run test:l2` → **Passed** 22（21 回归 + 1 诊断）
-- 2026-11-02 / 工作区（内容 = `38f4faa`）/ L2 / `npm run smoke` → **Passed** 21 checks
+- 2026-11-02 / Phase 0B-3 工作区 / L1 / `npm test` → **Passed** 55（45 既有 + 10 Bundle ID）
+- 2026-11-02 / Phase 0B-3 工作区 / L2 / `npm run test:l2` → **Passed** 22
+- 2026-11-02 / Phase 0B-3 工作区 / L2 / `npm run smoke` → **Passed** 21 checks
+- 2026-11-02 / **用户重启后** / L3 / F12 读 `data-dsh-music-bundle` → **Passed**（`dshm-67b0677998e1`，仅代表激活点）
 
 历史基线：
 
@@ -113,13 +126,17 @@ Phase 0B-2 新增的**部分验证**项：
 
 ## 6. 下一步（按顺序）
 
-1. **审核 Phase 0B-2**（本轮）：按 §8 的四个提交边界提交 → 打 `baseline-v1.7.0`（指向 `b8dc624`）仍待定
-2. **候选 A 单独审查**：镜像计划深模块，属状态机高风险改动，需影响分析；前置条件（快速回归网）已具备
-3. **B1 队列空白**：先用"探针把容器高度/行数画到界面上"确认真因，再修
-4. **缺陷裁定**：B10 / B12 / B13 / B14 逐个给结论（修 / 不修 / 改规范）；B11 先补 L2 复验
-5. **R06 / R08**：面板内队列视图 + 单按钮四态（纯客户端）
-6. **R11**：确认 SMTC 会话可见性，决定媒体键路径
-7. **动效**：按 `review-animations` / `emil-design-eng` 出第一份审查，先把参数从 Proposed 变 Approved
+1. **审核 Phase 0B-3**（本轮，未提交）：`scripts/bundle-id.mjs`、`test/bundle-id.test.mjs`、
+   `client.js` 的激活标记、文档
+2. **Phase 0B-3 的 L3 取证**（需重启 DSH）：F12 读 `data-dsh-music-bundle` → `--runtime` 比对；
+   Inspector 复核四个 slot；记录可见状态（本轮全部 `Not tested`）
+3. **Phase 0B-2 的四个提交**：`208023c` / `34defc6` / `38f4faa` / 文档提交已入库，打
+   `baseline-v1.7.0`（指向 `b8dc624`）仍待定
+4. **候选 A 单独审查**：镜像计划深模块，属状态机高风险改动，需影响分析；前置条件已具备
+5. **B1 队列空白**：F12 看是否有 `[dsh-music] render failed`——有＝渲染抛错，无＝容器/空子树
+6. **缺陷裁定**：B10 / B12 / B13 / B14 逐个给结论（修 / 不修 / 改规范）；B11 先补 L2 复验
+7. **R06 / R08**：面板内队列视图 + 单按钮四态（纯客户端）
+8. **R11**：确认 SMTC 会话可见性，决定媒体键路径
 
 ---
 
@@ -221,3 +238,39 @@ Phase 0B-2 新增的**部分验证**项：
 - 未修任何已登记缺陷（B10–B14 只做 characterization + 登记）
 - 未改 `client.js` / `ErrorBoundary` / slot / `DESIGN.md` / API 契约 / `package.json` 版本
 - 未打标签、未开始 Phase 0B-3
+
+**Phase 0B-3（Bundle ID 取证，工作区未提交）**
+
+依据：rc.5 定向只读核验（slot 生命周期 / Electron `no-store` / Inspector 能力）。
+采用精简方案 B'：**内容哈希 + 一处运行时标识 + 官方 Inspector**，不做 E/M/S 全套探针。
+
+- `client.js`（+24 行，纯增量）：
+  - factory 内 `const BUNDLE_ID = 'dshm-…' // dsh-music-bundle-id`——模块作用域，
+    避免 19 个模块拼进同一经典脚本时顶层 `const` 冲突
+  - `apply(ctx)` 第一个 `ctx.effect` 写 `documentElement.dataset.dshMusicBundle`、
+    `…BundlePhase="plugin-active"` 与 `…BundleOwner`（每次激活一个 token），
+    disposer **只在 owner 仍是自己时**清理（同一 ID 可能对应不同实例；rc.5 的 HMR 顺序是
+    `tearDownEntryFiber → import → refresh`，但宿主侧重启用路径不保证，故用 token 让行为与顺序无关）
+  - **只在激活路径写**：顶层写入只能证明字节被解析，不能证明插件被激活
+- `scripts/bundle-id.mjs`：默认只读。校验源码指纹、`--write`（拒绝缺失/重复标记）、
+  `--runtime`、`--served`（回环强校验 + 显式端口 + 超时 + 读首个 graph 帧后 `reader.cancel()`）
+- `test/bundle-id.test.mjs`：9 例（指纹一致/标记唯一/换行归一/`--write` 幂等/
+  缺标记与重复标记拒绝/陈旧报错不改文件/运行时值比对/非法 ID 拒绝）
+
+实测（本工作区，未提交）：`npm test` **55/55**（924ms，含 10 例 Bundle ID）；
+`npm run test:l2` **22/22**（24.3s，`ao=null`）；`npm run smoke` **21 项通过**；
+`bundle-id --json` 一致（`dshm-67b0677998e1`）；
+`bundle-id --served --url http://127.0.0.1:55844` 通过（artifact rev `bf6085bd2344` 与 Host 一致、
+served 126 965 字节内容相同、served id 相同、host release `0.2.1-rc.5 / d4db512`）。
+
+复审（提交前）：加实例所有权 token（同一 ID ≠ 同一实例）；脚本去掉动态 import、重复的 ID 正则、
+双次解析与死分支，`--timeout` 增加取值校验；新增一条以真实 Host rev 为期望值的回归用例。
+
+**Phase 0B-3 没有做 / 未验证**
+
+- **运行时 ID 已在真实重启后观测**（F12，`dshm-67b0677998e1`）；**未验证**：
+  音乐库 / 队列页是否正常（B1 未观察）、owner 保护在真实卸载路径下的行为（rc.5 顺序不会触发）
+- 编辑 `client.js` 会让 `client-hmr` 在 ≤500 ms 内热替换运行中模块（本轮发生了，rev 已变），
+  但这**不算** L3 验证——热替换不是重启，也不代表四个 slot 重新注册成功
+- 未改四个 slot 的 register/inject、未动 `immediately`、未改 `ErrorBoundary`、未修 B1、
+  未加每 slot 的 mounted effect、未改状态机/队列/API/持久化、未做 HMR 故障注入

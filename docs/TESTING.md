@@ -39,6 +39,8 @@
 | `test/player-eof-persist.test.mjs` | L1 | ✅ 安全 | 无 | 四态 EOF、解码错误、`dispose → init` 往返、异常存档降级（10 例，全回归） |
 | `test/support/player-harness.mjs` | L1 支撑 | ✅ 安全 | 无 | 假 engine（记录命令 + 可回推事件）、假 db（Map）、`delay: () => Promise.resolve()` |
 | `test/integration/queue-api.test.mjs` | L2 | ✅ 隔离无声 | **无声**（`--ao=null`）、仅临时根 | `queue.list ↔ snapshot` 顺序与元数据一致、写操作回包一致性（7 回归）+ B14 真实 mpv 复现（1 诊断） |
+| `scripts/bundle-id.mjs` | — | ✅ **只读**（仅 `--write` 写文件） | 默认不联网、不写；`--write` 只改标记行；`--served` 只发回环 GET | Bundle ID 校验、`--served` 宿主字节比对、`--runtime` 运行时比对（见 §2.2） |
+| `test/bundle-id.test.mjs` | L1 | ✅ 安全 | 临时目录（`mkdtemp`） | 指纹一致性 / 标记唯一性 / 换行归一 / `--write` 幂等 / 缺标记与重复标记拒绝 / 运行时值比对（9 例） |
 | `test/guard.test.mjs` | L1 | ✅ 安全 | 无（只起一个本地计数 HTTP 服务） | 证明危险脚本未授权时拒绝，且**目标服务器收到 0 个请求** |
 | `test/support/fixtures.mjs` | L1 支撑 | ✅ 安全 | 写临时目录 | 用 ffmpeg 生成 8s/3s/3s 夹具与封面 |
 | `test/support/host.mjs` | L2 支撑 | ✅ 隔离 | 临时 `DSH_HOME`、临时库 | 自建临时根、强制 `ao=null`、进程内 dispatch、先 dispose 再删目录 |
@@ -80,6 +82,74 @@
 2. 诊断用例**不得**计入任何"功能验收 Passed"。
 3. 报告测试结果时必须分开写：`回归 N 通过 / 诊断 M 通过（仅代表可复现）`。
 4. 诊断用例失败时，先判断是"缺陷被修"还是"行为换了形态"，不要直接改断言让它变绿。
+
+### 2.2 Bundle ID 取证（Client 版本）
+
+刷新页面**不能**证明 client 已更新，重启之前也**不能**证明。本节定义唯一可信的取证方式，
+并把三种"身份"分开记录——它们证明的东西不同，任何一方都不得冒充另一方。
+
+| 身份 | 由谁产生 | 证明什么 | 不证明什么 |
+|---|---|---|---|
+| **source id**（`dshm-xxxxxxxxxxxx`） | `scripts/bundle-id.mjs` 对 `client.js` 内容做 SHA-256（**排除标记行本身**），先做 CRLF→LF 归一化 | 仓库当前的 `client.js` 是哪一版；支持未提交改动 | 浏览器执行的是不是它 |
+| **artifact rev**（12 hex） | Host：`sha1(mtimeMs, ctimeMs, size)`；脚本用同一算法重算 | Host 的服务视图是否是"当前文件"（元数据层面） | 内容是否相同（同尺寸同时间戳会被骗过） |
+| **runtime id** | **执行的 Client 自己**：`apply(ctx)` 里用 `ctx.effect` 写 `documentElement.dataset.dshMusicBundle` | 页面到达了本插件的激活点，且执行的是这个 id 的字节 | 四个 slot 是否已注册；组件是否已挂载或渲染成功 |
+
+`data-dsh-music-bundle-phase="plugin-active"` 是同一处写入的语义标签：**只表示激活点**。
+slot 是否注册/active 由 Inspector 独立观察，组件是否真的渲染成功**当前无法自动观察**。
+
+**标记的写入点与清理**：`client.js` 的 `apply(ctx)` 内、第一个 `ctx.effect`；disposer 清掉
+`dsh-music-bundle` / `…-phase` / `…-owner` 三个属性。因此"属性在"＝"当前有一个活跃实例"，
+"属性值"＝"该实例的身份"。"属性不在"两种可能都有：没激活，或已被卸载。
+
+**实例所有权**：`data-dsh-music-bundle-owner` 是每次激活生成的短 token。disposer 只在
+owner 仍等于自己时才清理——**同一 Bundle ID 可能对应不同激活实例**，若旧实例的清理晚于
+新实例的写入，无条件 `delete` 会把新标记抹掉，看起来像"没激活"。rc.5 的 HMR 路径
+（`dsh-client-modules/lib/client.js:492-506`）是 `tearDownEntryFiber → import → refresh`，
+清理确实先于新 `apply`；但宿主侧的禁用/重启用路径不由该文件决定，token 让结论与顺序无关。
+
+**不在脚本顶层写入**——顶层只能证明字节被解析，不能证明插件被激活。
+
+#### 命令（全部只读，除 `--write`）
+
+```bash
+node scripts/bundle-id.mjs                  # 源码指纹 vs 嵌入 ID；不一致 exit 1
+node scripts/bundle-id.mjs --json           # 同上，机器可读（取证记录用）
+node scripts/bundle-id.mjs --write          # 刷新标记行；标记缺失/重复时拒绝写入
+node scripts/bundle-id.mjs --runtime <id>   # 把页面读到的 id 与源码比对；不一致 exit 1
+node scripts/bundle-id.mjs --served --url http://127.0.0.1:PORT [--id @local/dsh-music]
+```
+
+`--served` 的安全约束：`--url` **必填**（不设默认端口）、只接受回环地址、只接受 http、
+带超时（`--timeout`，默认 8000ms）、读完首个 graph 帧后 `reader.cancel()` **正常断开 SSE**。
+退出码：`0` 一致 / `1` 不一致 / `2` 读不到（跳过，明确打印"未证明"）/ `3` 用法错误。
+
+#### L3 取证步骤（必须重启）
+
+1. `git status --porcelain` + `git rev-parse --short HEAD`，记录脏净与 HEAD。
+2. `node scripts/bundle-id.mjs --json` → 记 **source id**。
+3. `node scripts/bundle-id.mjs --served --url http://127.0.0.1:<port>` → 记 **served 结果**与 **host release / rev**。
+4. **彻底退出 DSH 再启动**（不是关窗、不是 Ctrl+R）。
+5. 主窗口按 **F12**，粘贴：
+
+   ```js
+   ({ bundle: document.documentElement.dataset.dshMusicBundle ?? null,
+      phase:  document.documentElement.dataset.dshMusicBundlePhase ?? null,
+      owner:  document.documentElement.dataset.dshMusicBundleOwner ?? null })
+   ```
+
+6. `node scripts/bundle-id.mjs --runtime <粘贴到的 id>` → PASS/FAIL。
+7. Inspector 独立核对 slot：`cordis_inspect_query` → client/`Slots`.`listSubTree`，
+   `root` 分别取 `sidebar.footer.action` / `sidebar.panellist` / `main` / `settings.section`，
+   记录 `occupants[].id` 与 `occupants[].active`。
+8. 记录人眼看到的界面状态（是否可见、是否有内容）。
+
+记录字段：日期 / 类型 / 层 / 宿主版本（`0.2.1-rc.5`、commit）/ source id / artifact rev / runtime id /
+Inspector 的 slot 与 active / 可见状态 / Git HEAD 与脏净 / 结果。
+
+> **`active: true` 不等于渲染正常。** 它只表示该贡献未被 shell 弃权（abdicate）。
+> 本插件的 `guardedCell` 会在 shell 的边界**内侧**先接住渲染异常，因此本插件三处 slot 的崩溃
+> 对 shell 不可见，Inspector 会继续显示 `active: true`。判读规则见 `docs/CURRENT.md` §4。
+
 
 ---
 
@@ -230,6 +300,17 @@ npm run smoke -- --library <path> --allow-real-library   # 只读诊断，需显
 | 2026-11-02 | Automated | 工作区（Phase 0B-2，未提交） | L1 | `npm test`（含新增 `test/player-*.test.mjs`） | **Passed**：45 tests / 0 fail / 640ms；无 mpv、无淡变等待 | 脚本 | 29 例状态机测试；假 engine + 注入 `delay`/`random`；**不覆盖**真实 mpv 时序 |
 | 2026-11-02 | Automated | 工作区（Phase 0B-2，未提交） | L2 | `npm run test:l2`（新增 `queue-api.test.mjs`） | **Passed**：22 tests / 0 fail / 24.4s；`ao=null`；临时根已删除 | 脚本 | 队列两次读取的一致性；B14 在真实 mpv 下复现；**不覆盖**真实音频输出与真实宿主 |
 | 2026-11-02 | Automated | 工作区（Phase 0B-2，未提交） | L2 | `npm run smoke`（夹具模式） | **Passed**：21 checks / 0 fail；`temp root removed` | 脚本 | 仅回归确认，未新增断言 |
+| 2026-11-02 | Automated | 工作区（Phase 0B-3，未提交） | L1 | `npm test`（含新增 `test/bundle-id.test.mjs`） | **Passed**：54 tests / 0 fail / 883ms | 脚本 | 45 例既有 + 9 例 Bundle ID；**不证明**浏览器执行的字节（**已被复审取代**，见下方复审行） |
+| 2026-11-02 | Automated | 工作区（Phase 0B-3，未提交） | L1 | `node scripts/bundle-id.mjs --json` | **Passed**：source id = embedded id（`dshm-647cab86354f`） | 脚本 | 只读；**不**证明运行时（**已被复审取代**，见下方复审行） |
+| 2026-11-02 | Automated | 工作区（Phase 0B-3，未提交） | L2 | `node scripts/bundle-id.mjs --served --url http://127.0.0.1:55844` | **Passed**：artifact rev 与 Host 一致、served 126455 字节内容相同、trailer 正常、served id 相同；host release `0.2.1-rc.5 / d4db512` | 脚本 | 证明 Host **愿意**提供这份字节；**不**证明页面执行了它（**已被复审取代**，见下方复审行） |
+| 2026-11-02 | Automated | 工作区（Phase 0B-3，未提交） | L1 | `node scripts/bundle-id.mjs --runtime <id>`（正向/反向各一次） | **Passed**：相同值 exit 0；`dshm-ffffffffffff` exit 1 | 脚本 | 入参为**人工粘贴**的页面值；本轮未在真实页面取值，见下方 L3 |
+| 2026-11-02 | Automated | 工作区（Phase 0B-3 复审后，未提交） | L1 | `npm test` | **Passed**：55 tests / 0 fail / 924ms（45 既有 + 10 Bundle ID） | 脚本 | 含 artifact rev 真实向量（`aa30fdc87659`）回归 |
+| 2026-11-02 | Automated | 工作区（Phase 0B-3 复审后，未提交） | L1 | `node scripts/bundle-id.mjs --json` | **Passed**：source id = embedded id = `dshm-67b0677998e1` | 脚本 | 只读；**不**证明运行时 |
+| 2026-11-02 | Automated | 工作区（Phase 0B-3 复审后，未提交） | L2 | `node scripts/bundle-id.mjs --served --url http://127.0.0.1:55844` | **Passed**：artifact rev `bf6085bd2344` 与 Host 一致；served 126965 字节内容相同、trailer 正常、served id 相同 | 脚本 | 证明 Host **愿意**提供这份字节；**不**证明页面执行了它 |
+| 2026-11-02 | Automated | 工作区（Phase 0B-3 复审后，未提交） | L2 | `npm run test:l2` | **Passed**：22 tests / 0 fail / 24.3s；`ao=null`；临时根已删除 | 脚本 | 播放与队列语义未受本轮影响 |
+| 2026-11-02 | Automated | 工作区（Phase 0B-3 复审后，未提交） | L2 | `npm run smoke` | **Passed**：21 checks / 0 fail；`temp root removed` | 脚本 | 仅回归 |
+| 2026-11-02 | **Manual** | 工作区（Phase 0B-3 复审后）+ 重启后实例（`0.2.1-rc.5 / d4db512`，端口 64519） | L3 | 用户重启 → `bundle-id --served` 复跑 → `cordis_inspect_query` client/`Slots`（4 个 root）→ `capture-window.ps1` 截图 | **Passed（部分项）**：① served rev `bf6085bd2344` 与 Host 一致、内容与 `dshm-67b0677998e1` 相同；② 四个 slot 均 `active: true`（`dsh-music`/`music`/`music`/`dsh-music`）；③ 迷你行渲染出真实曲目与三键行（截图 `%TEMP%dsh-music-l3.png`）。**未取得**：`data-dsh-music-bundle` 字面值（无 DOM 通道）、音乐库/队列页是否正常（B1 未观察） | Agent | 只覆盖该次重启、该端口；`active:true` 不证明 React 渲染成功 |
+| 2026-11-02 | **Manual** | Phase 0B-3 工作区 / source id `dshm-67b0677998e1`（重启后实例 `0.2.1-rc.5 / d4db512`） | L3 | 用户在主窗口 F12 Console 执行 `({bundle: document.documentElement.dataset.dshMusicBundle, phase: document.documentElement.dataset.dshMusicBundlePhase})` | **Passed（仅此一项）**：`{bundle: "dshm-67b0677998e1", phase: "plugin-active"}`，与源码 ID 一致；`--runtime` 复核 exit 0 | 用户 | 证明页面**执行到本插件的激活标记点**、且执行的是该 ID 的字节；**不**证明四个 slot 已挂载、组件渲染无错、B1 已修 |
 
 **关于最后一条的说明**：
 
