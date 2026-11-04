@@ -167,6 +167,23 @@ test('playback semantics (isolated, silent)', { timeout: 180000 }, async (t) => 
     assert.equal(stopped.playing, false, `sequence stopped at the end (playing=${stopped.playing}, paused=${stopped.paused})`)
   })
 
+  await t.test('10b. playing again after the queue ended restarts from the first track', async () => {
+    const before = await state()
+    assert.equal(before.trackId, b.id, 'the playhead is still on the finished track')
+    assert.ok(before.positionMs >= before.durationMs, 'recorded at the end')
+
+    const resumed = await call('player.play')
+    assert.equal(resumed.trackId, a.id, 'the queue starts over from its first entry')
+    assert.equal(resumed.cursor, 0)
+    assert.equal(resumed.engineFile, a.path, 'mpv opened the first track')
+    assert.ok(resumed.positionMs < 1000, `started near the beginning (${resumed.positionMs}ms)`)
+
+    await sleep(1500)
+    const settled = await state()
+    assert.equal(settled.playing, true, 'and it did not stop again immediately')
+    assert.equal(settled.trackId, a.id)
+  })
+
   await t.test('11. cycling back to a normal mode resumes control', async () => {
     await call('player.mode', { mode: 'all' })
     await call('queue.play', { ids: [a.id, b.id], startIndex: 0 })

@@ -157,6 +157,49 @@ test('malformed stored state degrades to defaults instead of throwing', async (t
   assert.equal(snap.positionMs, 0)
 })
 
+test('playing again after a sequence queue ends starts over from the top', async (t) => {
+  // The sequence branch records "finished" as position = duration on the last
+  // entry. Playing again must not reuse that as a seek target — it would land
+  // on the end of the last track and stop immediately.
+  const h = await createPlayerHarness(t)
+  await h.player.setMode('sequence')
+  await h.player.playQueue(['a', 'b'], 1)
+  h.engine.state.idleActive = true
+  h.engine.state.currentFile = null
+  h.engine.emit({ type: 'endFile', reason: 'eof' })
+  await settle()
+
+  assert.equal(h.snap().playing, false, 'the queue ended')
+  assert.equal(h.snap().trackId, 'b', 'the playhead is still on the finished track')
+  assert.equal(h.snap().positionMs, h.snap().durationMs, 'and it is recorded at the end')
+
+  const loads = h.engine.of('load').length
+  await h.player.resume()
+
+  const load = h.engine.of('load').at(-1)
+  assert.equal(h.engine.of('load').length, loads + 1, 'playing loaded a file')
+  assert.deepEqual(load.args[0], [h.pathOf('a'), h.pathOf('b')], 'the queue restarts from the top')
+  assert.equal(load.args[2], 0, 'and seeks to 0, not to the old end position')
+  assert.equal(h.snap().trackId, 'a')
+  assert.equal(h.snap().cursor, 0)
+  assert.equal(h.snap().positionMs, 0)
+})
+
+test('resuming a paused track continues where it stopped', async (t) => {
+  const h = await createPlayerHarness(t)
+  await h.player.playQueue(['a', 'b'], 0)
+  await h.player.seek(4000)
+  await h.player.pause()
+  const loads = h.engine.of('load').length
+
+  await h.player.resume()
+
+  assert.equal(h.snap().paused, false, 'playback resumed')
+  assert.equal(h.snap().trackId, 'a', 'on the same track')
+  assert.equal(h.snap().positionMs, 4000, 'from the paused position')
+  assert.equal(h.engine.of('load').length, loads, 'without reloading the file')
+})
+
 test('restoreQueue:false starts empty and honours the default volume', async (t) => {
   const h = await createPlayerHarness(t, {
     stored: { player: { queue: ['a', 'b'], cursorId: 'a', mode: 'sequence', volume: 10 } },
