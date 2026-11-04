@@ -3,7 +3,7 @@
 > 每轮任务开始时读这里，结束时更新这里。它是"项目此刻在哪"的唯一来源；
 > 规范看 `docs/DESIGN.md`，验证证据看 `docs/TESTING.md`。
 
-最后更新：2026-11-02（Phase 0B-2 状态机回归网，工作区未提交）
+最后更新：2026-11-05（C1 队列稳定化，工作区未提交）
 
 ---
 
@@ -62,16 +62,18 @@
 | # | 问题 | 差异类型 | 影响 | 证据 | 状态 |
 |---|---|---|---|---|---|
 | **B1** | 音乐库「播放队列」一栏**渲染空白**（标题显示曲目数，内容区纯白） | Regression / Defect（**已修，L3 通过**） | 队列不可用；R07 无法验收 | **根因**：`QueuePanel` 以 `track: null` 调 `Cover`，`Cover` 在该路径读 `track.hasCover` → 首行抛 `TypeError`；而 `ErrorBoundary` 只读 `props.fallback`、两处调用点传的却是 `makeFallback` → 渲染 `null`，所以异常表现为"纯空白"而非报错。旧探针"纯 div 可渲染 / `.dshm-list` 不行"是把异常路径误读成了布局问题 | **已修**；2026-11-02 重启后 L3 通过：队列 6 行可见，`dshm-ab394dbf0ec0` 三方一致。**仍缺**：空队列状态 `Not tested`；"控制台无错误"只有间接证据（未直读 Console） |
-| **B3** | 播放模式仍是两个按钮（随机 + 循环三态） | Implementation Gap | 与 R08 不符 | `client.js` 传输行 | 待排期 |
+| **B3** | 播放模式仍是两个按钮（随机 + 循环三态） | **Implementation Gap（已修）** | 与 R08 不符 | 见 `LIMITATIONS.md` §一 B3 | 已修（工作区），待 L3 |
 | **B4** | 面板内没有队列视图 | Implementation Gap | 与 R06 不符 | 队列按钮打开音乐库 | 待排期 |
 | **B5** | Windows 媒体键未实现、路径未验证 | Implementation Gap | R11 `Not tested` | 见 `DECISIONS.md` D-07 | 待调查 |
 | **B10** | 随机播放下「下一首播放」插到错误位置（`cursor+1` 是 `plays` 下标，却用来切 `queue`；随后又被整队重洗） | **已修（L3 用户口述通过）**：仅 shuffle 受影响 | "下一首播放"在 shuffle 下不生效 | 见 `LIMITATIONS.md` §一 B10；L1 四模式 + L2 真实 mpv 均判定"下一个打开的文件就是刚插入的" | 已修：重启后用户手动验收；口述未留曲目名 |
 | **B11** | 播放中切到单曲循环不裁 mpv 镜像尾，旧队列尾部仍被持有 | **未验证的技术风险**（无真实 mpv 证据前不宣称用户可见缺陷） | 队尾 EOF 时的实际表现未在真实 mpv 下复验 | 见 `LIMITATIONS.md` §一 B11 | 待 L2/L3 复验 |
-| **B12** | 删除正在播放的队列条目会回到队首（而不是顺延到下一首） | **待产品裁定的交互行为**（不是已确认缺陷） | 与用户直觉不符，但无 Approved 条目 | 见 `LIMITATIONS.md` §一 B12 | 待裁定 |
-| **B13** | 重复曲目时 `indexOf` 命中第一条，编辑队列后游标跳到第一份拷贝 | **已复现缺陷**：队列条目身份 / 游标一致性 | 队列高亮与"清空后续"可能作用在错误条目 | 见 `LIMITATIONS.md` §一 B13 | 已复现，修法未定 |
-| **B14** | `queue.set` 丢掉当前曲时不重载：`trackId` 指向新队首，mpv 仍在播旧文件（同一份 snapshot 自相矛盾） | **已复现缺陷（高优先级）**：播放状态一致性，L1 + L2 双证据 | 现有 UI 只在含当前曲时调用，故未在界面暴露；`queue.set` 是公开 op | 见 `LIMITATIONS.md` §一 B14 | 已复现，待影响分析 |
-| **B15** | 队列视图标题把整库曲目数当成队列长度 | **UI 缺陷**（不影响播放） | 标题「85 首」vs 队列 6 首，误导规模判断 | 见 `LIMITATIONS.md` §一 B15 | 待处理 |
-| **B16** | 队列高亮行与实际播放曲目不一致（`cursor` 索引 `plays`） | **UI 缺陷**（与 B10/B13 同源） | 高亮错行 | 见 `LIMITATIONS.md` §一 B16 | 待处理（与 B10/B13 一并裁定） |
+| **B12** | 删除正在播放的队列条目会回到队首（而不是顺延到下一首） | **已按决策 8 修正** | 顺延到后继；最后一首则停止并保留队列 | `LIMITATIONS.md` §一 B12 · L1 两例 | 已修（L1） |
+| **B13** | 重复曲目时 `indexOf` 命中第一条，编辑队列后游标跳到第一份拷贝 | **已消除（结构性）**：队列唯一 | 条目身份 = trackId | `LIMITATIONS.md` §一 B13 · L1 两例 | 已消除；D-09 → D-15 |
+| **B14** | `queue.set` 丢掉当前曲时不重载：`trackId` 指向新队首，mpv 仍在播旧文件 | **已修** | 当前曲被替换时 mpv 跟随 | `LIMITATIONS.md` §一 B14 · L1 + L2 | 已修 |
+| **B15** | 队列视图标题把整库曲目数当成队列长度 | **已修（客户端）** | 标题取 `player.queue.length`；队列视图不再请求整库 | `LIMITATIONS.md` §一 B15 · 静态守卫 | 已修，待 L3 |
+| **B16** | 队列高亮行与实际播放曲目不一致（`cursor` 是 `plays` 的下标，被当成 `queue` 的下标） | **已修** | `cursor` 与可见队列同数组，客户端按 id 定位 | `LIMITATIONS.md` §一 B16 · 静态守卫 | 已修 |
+| **B18** | 「清空待播放」同样用 `cursor + 1` 切队列，会删错条目（最坏删掉正在播的） | **已退役**（按决策 4 删除该功能） | 按钮改为「停止并清空队列」（`queue.clear`） | `LIMITATIONS.md` §一 B18 · 静态守卫 | 已退役 |
+| **B17** | 顺序被重建后自然 EOF 状态失步：`baseCursor` 未随顺序重排重新锚定，`pos` 事件映射到错误曲目 | **已修（工作区，待重启 L3）**：锚定现在只写在 `mirror()` 里 | 音频已切到下一首，迷你行与队列仍显示上一首 | L1「a reordered queue keeps the auto-advance mapping anchored」；L2 真实 mpv「B17: a natural EOF after an order change…」 | 已修，待 L3 |
 
 > **约束（原 B2）**：客户端 bundle 只在宿主启动时加载——这是**宿主约束**，已归入
 > [`ARCHITECTURE.md`](../ARCHITECTURE.md) §8 约束 2；B2 编号不再复用。
@@ -128,6 +130,11 @@ Phase 0B-3（Bundle ID）的取证状态——2026-11-02 02:09 用户重启后�
 
 ## 6. 下一步（按顺序）
 
+0. **审核 C2**（本轮，未提交）：`engine.load` / `rewriteTail` 的确认语义 + Player 的采纳规则；
+   L1 82 例、L2 26 例、Smoke 21 项通过。**本轮未跑 L3**（按新规约，真实宿主只做只读或经批准的人工验收）
+0b. **B19（新发现，范围外）**：sequence 播完后 `resume()` 用 `positionMs = durationMs` 重新 seek，点播放立刻又结束；需单独任务
+0c. **`stop` / `pause` 的滞后等待**：C2 未覆盖（它们不属于播放列表写入），仍留在 Player 里；若后续把
+   "命令已生效"下沉到 Engine，可一并删掉
 1. **审核 B1 修复**（本轮，未提交）：`client.js` 两处（`Cover` 空值安全 + 错误降级契约）、
    `test/client-source.test.mjs`、文档
 2. **B1 的空队列状态未验收**：需要在真实界面清空队列（会删掉待播列表），本轮未动
@@ -137,7 +144,7 @@ Phase 0B-3（Bundle ID）的取证状态——2026-11-02 02:09 用户重启后�
 5. **候选 A 单独审查**：镜像计划深模块，属状态机高风险改动，需影响分析；前置条件已具备
 5. **B1 队列空白**：F12 看是否有 `[dsh-music] render failed`——有＝渲染抛错，无＝容器/空子树
 6. **缺陷裁定**：B12 / B13 / B14 逐个给结论（修 / 不修 / 改规范）；B11 先补 L2 复验；B10 已修（待 L3）
-7. **R06 / R08**：面板内队列视图 + 单按钮四态（纯客户端）
+7. **R06**：面板内队列视图（纯客户端）；R08 已实现，待 L3 验收
 8. **R11**：确认 SMTC 会话可见性，决定媒体键路径
 
 ---
@@ -147,7 +154,7 @@ Phase 0B-3（Bundle ID）的取证状态——2026-11-02 02:09 用户重启后�
 | 规范 | 代码 | 差异类型 | 处理 |
 |---|---|---|---|
 | R06 面板内 封面 ⇄ 队列 | 队列在音乐库 | Implementation Gap | 修完 B1 后实现；实现方法未定（见 DESIGN §5） |
-| R08 单按钮四态 | 两个按钮 | Implementation Gap | 纯客户端，待排期 |
+| R08 单按钮四态 | 已实现 `ModeButton` | — | 待重启 L3 验收（切换不打断、图标与 Host 一致） |
 | R11 媒体键 | 未实现 | Implementation Gap + 路径未验证 | 先确认 SMTC 可见性 |
 
 > 按 `AGENTS.md` §2：先分类，再登记；不擅自改规范。
@@ -320,3 +327,82 @@ served 126 965 字节内容相同、served id 相同、host release `0.2.1-rc.5 
 - 与 B14 的关系：**不同根因**（B14 是 `setQueue` 丢掉当前曲时传了 `restart: false`），
   两者可以独立修；本次未触碰 B14
 - 尚未 L3：这是 Host 侧改动，需要重启 DSH 才在真实实例生效（客户端未改，Bundle ID 不变）
+
+**自然 EOF 失步（B17）与 R08（工作区未提交）**
+
+- 复现（隔离 L2，真实 mpv）：播放队列中间项 → 播放中 `setMode` / `move` 重建顺序 → 让它自然播完
+  - 修复前：`currentFile=01.测试甲` 而 `trackId=丙`（另一组是 `currentFile=03.测试丙` 而 `trackId=甲`）
+  - 纯自然 EOF（不重建顺序）：四种模式都正常 —— 触发条件是"顺序被重建过"
+- 根因：`baseCursor + mpv playlist-pos` 是两者之间的锚。重建 `plays` 会移动 `cursor`，
+  但 `syncToEngine({restart:false})` 重写 mpv 尾部时没有重新锚定 `baseCursor`，
+  下一次 `pos` 事件就落到错的 `plays` 下标（±偏移），偏移过大时越界被忽略 → 快照停在旧曲
+- 修复：非重载同步结束后读一次 mpv 的 `playlist-pos`，令 `baseCursor = cursor - pos`
+  （trim/append 不改 mpv 的 pos，等式成立）；不新增定时刷新，不改镜像结构
+- R08：`ShuffleButton` + `RepeatButton` 合并为 `ModeButton`（四态循环）。
+  旧随机按钮的语义是 `player.mode` 的 `all ⇄ shuffle` 切换，不触发立即选曲，因此合并安全；
+  图标与可访问名称取自 Host 的 `mode`，不会与实际状态漂移
+- 新增测试：L1「重建后的顺序仍保持自动推进锚点」（基线红、修复后绿）；
+  L2「B17：顺序变更后的自然 EOF 报告的就是正在播的曲目」；静态守卫「传输行只有一个四态控件」
+- Bundle ID：`dshm-ab394dbf0ec0` → **`dshm-0007b8332341`**（客户端有改动）
+
+**队列高亮（B16）修复（工作区未提交，Client 侧）**
+
+- 实机证据（只读 `status`）：`mode=shuffle`、`cursor=2`、`trackId` 在 `queue` 里是第 5 项（index 4）
+  → 客户端高亮 `queue[cursor]`，于是高亮「莲梦」而实际在播「天上飞琼」
+- 修复：`QueuePanel` 改为按 `trackId` 在 `queue` 里的位置高亮（与音乐库列表的既有做法一致），
+  `cursor` 仍保留给「清空待播放」用（那个问题另记为 B18，未修）
+- 静态守卫：`the queue highlight follows the playing track, not the play-order cursor`
+- 实机（HMR 预览，未重启）截图确认：队列 5 行中最后一行「天上飞琼」高亮，与迷你行一致
+- Bundle ID：`dshm-0007b8332341` → **`dshm-6d020b2c57c5`**
+
+**C1 队列稳定化（工作区未提交，2026-11-05）**
+
+目标：队列只剩一条顺序（可见 = 实际播放），条目唯一，`cursor` 只有一个写者；不引入 entryId、
+不双写、不加播放顺序 API。
+
+- `lib/host/player.js`：删除 `plays` 与 `rebuildPlays`；新增 `normalize()`（去重 / 过滤 missing）、
+  `commit()`（唯一写 cursor 的地方）、`shuffleTail()` / `shuffleAll()`、`mirror()`（替换
+  `syncToEngine`，B17 的锚定收在这里）、`reloadAt()`、`stopEngine()`；`removeAt` 顺延/停止分支；
+  `setQueue` 当前曲被替换时重载；`clear` 追加 `playlist-clear`；`resume` 支持"队列非空但无当前曲"。
+- `client.js`：队列头按钮由「清空待播放」（`queue.set` + `cursor+1` 裁剪）改为「停止并清空队列」
+  （`queue.clear`）；行 key 改用 id；队列视图不再请求 `library.list`（B15），标题改取
+  `player.queue.length`。
+- 行为变化（已批准）：随机只重排"当前之后"，退出随机保留可见顺序；删除当前曲顺延、最后一首停止；
+  队列编辑不改变暂停/停止状态；「停止并清空队列」清空队列与 mpv 播放列表，不动曲库、收藏、播放列表。
+
+验证（当次运行）：
+- `npm test` **75/75**（≈1.1s）——L1，含 23 例队列规格与 2 条新的客户端静态守卫
+- `npm run test:l2` **25/25**（≈25s，`ao=null`，隔离 `DSH_HOME`）——含 B14/B17 与两条"命令已发但属性未回传"的真实 mpv 断言
+- `npm run smoke` **21 项通过**，`temp root removed`
+- **L3（真实宿主，用户授权、全程静音、脚本结束时恢复原队列与模式）**：首轮 15/18 暴露
+  两个真缺陷——`stop` / `pause` 命令返回时 mpv 的 `path`、`idle-active`、`pause` 尚未回传，
+  写入 op 的返回快照会短暂自相矛盾；已用 `awaitEngine` 有界等待修复（L1 + L2 各补红→绿用例）。
+  **二次重启后复跑：23/23 通过**（4.7s，含四态切换、队尾回绕、prev 3 秒规则、播放中重排、
+  空队列播放；`diag.logs` 0 条 error）
+
+**C1 未做 / 未验证**
+- 未改 API 契约（`api.js` 零改动）、未改持久化形状、未改 `app_state` 键名
+- C2（镜像 seam）、C3（模式表）、C4（`cursorId` 跨 seam）、C6（死字段）未做
+- B11（单曲循环不裁镜像尾）仍按诊断用例记录在案
+- 未提交；未在真实队列/真实数据库上运行未恢复的破坏性操作（两次 L3 均恢复现场，
+  并在开始前各做了一次 `db.backup`）
+
+**C2 镜像同步收口（工作区未提交，2026-11-05）**
+
+目标：把"让 mpv 的播放列表等于 `queue.slice(cursor)`"从"三个动词 + 调用方善后"改成
+Engine 的一个**带确认语义**的操作；Player 只决定目标，从 Engine 返回的事实推导 cursor。
+
+- `lib/host/engine.js`：`load()` 与 `rewriteTail({expectCurrent, tail})` 在 mpv 报告目标
+  `playlist-count` 之后，还要**逐个读回 `playlist/N/filename` 与期望列表核对**，全对才返回 `ok`。
+  返回 `{ok, reason, at, seen, pos, count, currentFile}`；
+  `reason` ∈ `ok / timeout / current-moved / playlist-mismatch / no-current / no-paths`。
+  `current-moved` **不写入**；`playlist-mismatch` 不回报成功。
+  删除 `append()` / `trimTail()`（它们正是被收口的那三个动词）。
+- `lib/host/player.js`：`mirror()` 不再读 `playlist-pos`、不再自己算 `cursor - pos`；
+  新增 `adoptMirror()`，用 `at - paths.indexOf(seen)` 求出 `ids[0]` 在 mpv 里的绝对下标，
+  再由 `pos` 反推 cursor 与 `baseCursor`；`seen` 不在本次 paths 里时**不采纳、不设锚点**并记日志。
+  `current-moved` 时采纳新当前曲并**重写一次**尾部（`corrective` 保证只有一次）。
+- 未改：API / 持久化 / 客户端 / 四态模式表 / `stop` 与 `pause` 的有界等待（它们不属于播放列表写入）
+
+验证（当次运行）：`npm test` **84/84**；`npm run test:l2` **27/27**（含"接近 EOF 时重写尾部"与
+引擎级的"拒绝过期当前曲 + 读回核对"）；`npm run smoke` 21 项。**未跑 L3**。

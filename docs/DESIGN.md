@@ -33,7 +33,7 @@
 - **单一事实来源**：本文件只写产品/视觉/交互规范；实现细节看 `ARCHITECTURE.md`，
   验证方法与结果看 `docs/TESTING.md`，决策原因看 `docs/DECISIONS.md`，进度看 `docs/CURRENT.md`。
 
-最后更新：2026-11-01（Phase 0A 审核修订：R06/R08 确立为已批准目标；引入版本绑定与父子摘要规则）
+最后更新：2026-11-02（R08 实现状态更新为 Implemented；R06 仍为缺口）
 
 ---
 
@@ -48,11 +48,12 @@
 | **R05** | 正在播放面板以封面优先 | Approved | Implemented | **Passed** | v1.7 `/ b8dc624` | 面板封面满宽（`aspect-ratio: 1/1`）；证据 `artifacts/v12-crop-pop.png`（人工） |
 | **R06** | **播放面板内切换封面与队列**；首次展开默认封面，之后重新展开**保留上次视图** | Approved | **Not implemented** | Not tested | v1.7 `/ b8dc624` | 当前代码把队列入口指向音乐库，属**实现缺口**，不是需求变更；见 §2 与 §5 |
 | **R07** | 队列支持拖动排序、移除、下一首播放、添加到队列 | Approved | Partial | **Failed** | v1.7 `/ b8dc624` | 见子项：Host API 齐全（R07.a），UI 因渲染空白不可用（R07.b） |
-| **R08** | 播放模式用**一个按钮**循环四态：列表播放 → 列表循环 → 单曲循环 → 随机播放 | Approved | **Not implemented** | Not tested | v1.7 `/ b8dc624` | 当前是两个按钮（随机开关 + 循环三态），属**实现缺口**，不是待重新裁定 |
+| **R08** | 播放模式用**一个按钮**循环四态：列表播放 → 列表循环 → 单曲循环 → 随机播放 | Approved | **Implemented** | **Not tested** | —（待重启 L3） | `client.js` 的 `ModeButton`：`MODE_CYCLE = [sequence, all, one, shuffle]`，图标与可访问名称取自 Host 的 `mode`；切换只改写后续顺序，不重载当前曲 |
 | **R09** | 切换播放模式不能打断当前音乐 | Approved | Implemented | **Passed** | v1.2 时期自动化（commit 未记录） | 自动化断言见 `docs/TESTING.md` §8；**结论仅覆盖 v1.2**，该脚本现已列入禁用清单，v1.7 未复跑 |
 | **R10** | 不做波形、视频缩略图等非必要功能 | Approved | Implemented | **Passed** | v1.7 `/ b8dc624` | 负面约束（验证方式见 §1.2）；**静态检索**限定范围内未发现实现（范围见 `docs/TESTING.md` §8）；**未做完整 UI 走查** |
 | **R11** | 优先支持 Windows 系统多媒体键 | Approved | **Not implemented** | **Not tested** | —（未实测） | 运行路径未验证，**不是确认不可实现**；见子项与 `docs/DECISIONS.md` D-07 |
 | **R12** | 动效审查以 emilkowalski/skills 的实际文件与章节为依据（高频克制、直接操控、可中断、性能） | Approved | Partial | Not tested | —（尚无审查记录） | 仅一个全局缓动 `--dshm-ease = cubic-bezier(.32,.72,0,1)` 用于所有场景；时长散落 90–180ms，无 token |
+| **R13** | 播放队列 = 唯一 trackId 的**单一可见播放顺序**：同一曲目不重复；「下一首播放」移动已有条目；随机只重排当前之后；「停止并清空队列」是唯一破坏性队列操作 | Approved | Implemented | Not tested | 工作区（未提交） | L1 21 例 + L2 真实 mpv 通过；**L3 未验证**（需重启 DSH）。见 `docs/DECISIONS.md` D-14 / D-15 / D-16 |
 
 ### 1.1 子项
 
@@ -86,7 +87,7 @@
 | 规范 | 代码现状 | 分类 | 后续 |
 |---|---|---|---|
 | R06 面板内 封面 ⇄ 队列 | 队列入口指向音乐库；面板没有第二视图，也没有"记住上次视图" | **Implementation Gap** | 先查清音乐库队列空白（B1），再在面板内实现；旧入口的处置单列（见 §5） |
-| R08 单按钮四态 | 两个按钮（随机 + 循环三态） | **Implementation Gap** | 纯客户端改动，Host 已有四态 |
+| R08 单按钮四态 | **已实现**：`ModeButton` 四态循环（`sequence → all → one → shuffle`） | — | 待重启 L3 验收：图标与 Host 一致、切换不打断当前曲 |
 | R11 媒体键 | 未实现 | **Implementation Gap + 路径未验证** | 先确认 SMTC 会话可见性 |
 
 > 区分口径：**Implementation Gap** = 已批准但还没做；**Regression/Defect** = 曾经能用、现在坏了
@@ -146,8 +147,7 @@
 2. **B1 队列空白的根因**：探针已排除"没数据/没执行"，剩下容器高度与行结构两类可能，未定论。
 3. **旧音乐库「播放队列」入口的处置**：R06 落地后，这一栏是保留（作为队列的完整视图）
    还是移除，未定。
-4. **队列条目身份**：当前用数组下标；重复歌曲会破坏游标定位。是否需要稳定 `entryId`，
-   属数据模型决策（见 `docs/DECISIONS.md` D-09）。
+4. ~~队列条目身份~~ **已决**：条目身份 = 唯一 `trackId`，不引入 `entryId`（R13 / D-15）。
 5. **随机模式顺序稳定性**：当前每次队列编辑都重新洗牌；是否需要"一轮不重复"（D-10）。
 6. **Windows 媒体键落地路径**：依赖 mpv 的 SMTC，还是由 DSH 侧接管（D-07）。
 

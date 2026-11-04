@@ -22,7 +22,13 @@ mpv 负责文件读取、解码、缓冲、播放列表推进与音频输出；H
 - 协议：换行分隔 JSON，`{command, request_id}` → `{request_id, error, data}`，事件为 `{event, name, data}`。
 - 观察属性：`pause`、`playlist-pos`、`playlist-count`、`audio-out-params`、`audio-params`、`audio-codec-name`、`current-ao`、`audio-device`、`eof-reached`、`idle-active`、`duration`。
 - **不观察 `time-pos`**（高频），改为每秒一次 `get_property time-pos`，UI 侧用 rAF 插值。
-- 播放列表：mpv 镜像「当前曲 + 之后的队列」，因此 `--gapless-audio=weak` 生效，切歌无空隙；队列变化时 `playlist-remove` 裁尾 + `loadfile append` 补尾，不断当前播放。
+- 播放列表：mpv 镜像「当前曲 + 之后的队列」，因此 `--gapless-audio=weak` 生效，切歌无空隙。
+  队列变化只改「当前之后的条目」：Engine 的 `rewriteTail({expectCurrent, tail})` 负责裁剪 + 追加，
+  **逐个读回 `playlist/N/filename` 与期望列表核对**之后才返回 `ok`——条目数相等不算成功。
+  它同时返回 `at`（这次写入依据的 mpv 下标）与 `seen`（那一刻 mpv 在该下标上的文件），
+  Player 据此把 cursor 从 mpv 的答案里重新推导，而不是相信自己发出的那个。
+  三种不一致都有明确出口：mpv 已换曲 → `current-moved`（**不写入**）；写后条目内容不符 →
+  `playlist-mismatch`（不回报成功、不动锚点）；`seen` 不在调用方的顺序里 → 不采纳、不设锚点。
 - 进程卫生：`quit` → 2.5s 宽限 → `terminate`；反复崩溃有 3 次退避重启预算；`ctx.subprocess` 服务释放时托管子进程一并终止。
 
 ### 规格的三层口径
