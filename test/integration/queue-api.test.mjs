@@ -245,6 +245,22 @@ test('queue reads and write results agree (isolated, silent)', { timeout: 120000
     assert.notEqual(refused.trackId, c.id, 'the entry that took the slot is not played')
   })
 
+  await t.test('F1: the pause op returns the state mpv has already confirmed', async () => {
+    // mpv acks `set_property pause` before the observed property changes. A
+    // reply built from the stale mirror said "not paused" while mpv was paused.
+    await call('queue.play', { ids: [a.id, b.id], startIndex: 0 })
+    assert.equal(await waitForEngineFile(a.path), true, 'mpv opened the track')
+
+    let stale = 0
+    for (let i = 0; i < 10; i += 1) {
+      const paused = await call('player.pause')
+      if (paused.paused !== true) stale += 1
+      const resumed = await call('player.play')
+      if (resumed.playing !== true) stale += 1
+    }
+    assert.equal(stale, 0, 'every pause/resume reply already reported the confirmed state')
+  })
+
   await t.test('C2 (engine): the tail write refuses a moved current and reads the entries back', async () => {
     const { service } = holder.host
     await call('queue.play', { ids: [a.id, b.id, c.id], startIndex: 0 })

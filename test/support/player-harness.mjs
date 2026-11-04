@@ -50,6 +50,7 @@ export function createFakeEngine(initial = {}) {
   let playlist = []
   let pos = 0
   let pendingFailure = failRewrite
+  let pendingPauseFailure = null
   let pendingCorruption = null
   let ghostSeen = false
   let moveBeforeWrite = false
@@ -99,6 +100,8 @@ export function createFakeEngine(initial = {}) {
     moveDuringNextWrite() { moveDuringWrite = true },
     /** The next tail write reports a failure and changes nothing. */
     failNextWrite(reason = 'timeout') { pendingFailure = reason },
+    /** The next pause command is acknowledged but never confirmed. */
+    failNextPause(reason = 'timeout') { pendingPauseFailure = reason },
     /** The next write lands, but the playlist ends up in the wrong shape. */
     corruptNextWrite(kind = 'swap') { pendingCorruption = kind },
     /** The next successful write reports an entry the queue has never heard of. */
@@ -106,12 +109,22 @@ export function createFakeEngine(initial = {}) {
 
     async setVolume(value) { record('setVolume', [value]); lastVolume = value; return true },
     async setMute(flag) { record('setMute', [flag]); return true },
+    /**
+     * Mirrors the production contract: `ok` means mpv has already reported the
+     * requested pause state, not merely that the command was accepted.
+     */
     async pause(flag) {
       record('pause', [flag])
-      const apply = () => { state.pause = Boolean(flag) }
-      if (slowPauseMs > 0 && flag) setTimeout(apply, slowPauseMs)
-      else apply()
-      return true
+      const want = Boolean(flag)
+      if (pendingPauseFailure !== null) {
+        const reason = pendingPauseFailure
+        pendingPauseFailure = null
+        return { ok: false, reason, paused: state.pause }
+      }
+      if (state.pause === want) return { ok: true, reason: 'ok', paused: state.pause }
+      if (slowPauseMs > 0) await new Promise((done) => setTimeout(done, slowPauseMs))
+      state.pause = want
+      return { ok: true, reason: 'ok', paused: state.pause }
     },
     async seek(ms) { record('seek', [ms]); return true },
     async command(...args) {

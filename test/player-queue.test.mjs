@@ -181,6 +181,31 @@ test('a paused reload reports paused before the op returns', async (t) => {
   assert.equal(snap.playing, false)
 })
 
+test('a pause the engine does not confirm fails instead of reporting a stale snapshot', async (t) => {
+  // mpv acks `set_property pause` before the observed property changes. If the
+  // confirmation never arrives, the op must not answer with the old state.
+  const h = await createPlayerHarness(t, { tracks: ALL })
+  await h.player.playQueue(['a', 'b'], 0)
+  h.engine.failNextPause('timeout')
+
+  await assert.rejects(() => h.player.pause(), /not confirmed/i)
+  assert.equal(h.snap().paused, false, 'and nothing was reported as paused')
+})
+
+test('a confirmed pause is reflected in the snapshot the op returns', async (t) => {
+  const h = await createPlayerHarness(t, { tracks: ALL, engineState: { slowPauseMs: 20 } })
+  await h.player.playQueue(['a', 'b'], 0)
+
+  await h.player.pause()
+
+  assert.equal(h.snap().paused, true)
+  assert.equal(h.snap().playing, false)
+
+  await h.player.resume()
+  assert.equal(h.snap().paused, false)
+  assert.equal(h.snap().playing, true)
+})
+
 test('queue edits never turn a paused player into a playing one', async (t) => {
   const h = await createPlayerHarness(t, { tracks: ALL })
   await h.player.playQueue(['a', 'b', 'c'], 1)
