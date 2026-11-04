@@ -67,6 +67,7 @@
 | **R04.b** | R04 | 拖动全链路（按下→拖动→松手提交） | Implemented | **Not tested** | v1.7 `/ b8dc624` | 代码路径为"松手才提交一次 seek"，未在真实环境验证手感与结果 |
 | **R07.a** | R07 | Host 侧四项队列操作 API | Implemented | **Not tested** | v1.7 `/ b8dc624` | `queue.move` / `queue.remove` / `queue.enqueue{next}` / `queue.enqueue{end}` 存在，未逐项验收 |
 | **R07.b** | R07 | 队列 UI 可用（渲染 + 交互） | Partial | **Failed** | v1.7 `/ b8dc624` | 音乐库「播放队列」一栏渲染空白（见 `docs/CURRENT.md` B1） |
+| **R07.c** | R07 | 点击队列中的某一行，播放**该歌曲**（按 trackId 解析，不按快照里的下标）；曲目已移出队列则拒绝；队列的集合与顺序以 Host 的 `player.queue` 为准，不得替换成整库；行可用键盘（Enter / Space）触发 | Implemented | **Not tested** | 工作区（B15） | `player.jump{trackId}` + `jumpToTrack()`；L1 两例、L2 一例、客户端静态守卫四条；**未做 L3** |
 | **R11.a** | R11 | mpv 的 SMTC 会话是否被 Windows 识别 | Not implemented | **Not tested** | — | 能力由 mpv 默认提供（`--media-controls` 默认 yes），会话存在性未实测 |
 | **R11.b** | R11 | 物理媒体键能否驱动播放 | Not implemented | **Not tested** | — | 当前参数下物理键路径被无 VO 窗口 + 无默认绑定阻断，未实测 |
 

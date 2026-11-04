@@ -406,3 +406,24 @@ Engine 的一个**带确认语义**的操作；Player 只决定目标，从 Engi
 
 验证（当次运行）：`npm test` **84/84**；`npm run test:l2` **27/27**（含"接近 EOF 时重写尾部"与
 引擎级的"拒绝过期当前曲 + 读回核对"）；`npm run smoke` 21 项。**未跑 L3**。
+
+**B15 队列视图正确性（工作区未提交，2026-11-05）**
+
+追踪结论（先查调用链再改）：
+
+- **标题**：`LibraryPage.reload()` 在 `view==='queue'` 时曾调用 `library.list({view:'queue'})`，
+  Host 的 `library.list` 没有 `queue` 分支 → 落到 default 返回**整库**；标题取 `tracks.length`
+  所以显示 85。C1 已把该分支改成不请求、标题取 `player?.queue?.length`。
+- **点击播放**：队列视图里**根本没有播放入口**——`QueuePanel` 的行只有拖拽与移除；
+  唯一能播的 `playFrom(index)` 绑在 `TrackRow` 上，而它在 `showQueue` 时不渲染。
+  也就是说"整库替换进队列"是**潜在陷阱**而不是已发生的路径：它的前提是让队列视图
+  拿到 `tracks`（整库）后用 `playFrom` 播。
+- **修复**：队列行点击改为 `player.jump{trackId}`——只送一个 id，**不送任何列表、也不送下标**；
+  Host 用**当前队列**解析位置再调用既有的 `jumpTo()`。歌曲已移出队列时拒绝跳转，
+  不会播到顶替它位置的那首。行可聚焦，Enter / Space 触发播放；移除按钮自己消化事件，
+  没有按钮嵌套；拖拽刚结束时不会把松手当成点击。
+- 未改：`playFrom` / 普通曲库与专辑视图的播放入口、四态模式表、布局。
+
+验证（当次运行）：`npm test` **89/89**（+2：按 id 跳转、已移除曲目不播放）；
+`npm run test:l2` **28/28**（真实 mpv：移动后按 id 跳转播放所选曲；删除后跳转被拒且不播顶替项）；
+`npm run smoke` 21 项；Bundle ID `dshm-3c68b1072173`。**未跑 L3**。
