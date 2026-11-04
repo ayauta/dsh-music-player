@@ -132,7 +132,7 @@ Phase 0B-3（Bundle ID）的取证状态——2026-11-02 02:09 用户重启后�
 
 0. **审核 C2**（本轮，未提交）：`engine.load` / `rewriteTail` 的确认语义 + Player 的采纳规则；
    L1 82 例、L2 26 例、Smoke 21 项通过。**本轮未跑 L3**（按新规约，真实宿主只做只读或经批准的人工验收）
-0b. **B19（新发现，范围外）**：sequence 播完后 `resume()` 用 `positionMs = durationMs` 重新 seek，点播放立刻又结束；需单独任务
+0b. ~~**B19**~~ 已修（本轮）：序列播完后 `resume()` 从队首 0:00 重新开始；正常暂停仍按位置恢复。待 L3
 0c. **`stop` / `pause` 的滞后等待**：C2 未覆盖（它们不属于播放列表写入），仍留在 Player 里；若后续把
    "命令已生效"下沉到 Engine，可一并删掉
 1. **审核 B1 修复**（本轮，未提交）：`client.js` 两处（`Cover` 空值安全 + 错误降级契约）、
@@ -427,3 +427,42 @@ Engine 的一个**带确认语义**的操作；Player 只决定目标，从 Engi
 验证（当次运行）：`npm test` **89/89**（+2：按 id 跳转、已移除曲目不播放）；
 `npm run test:l2` **28/28**（真实 mpv：移动后按 id 跳转播放所选曲；删除后跳转被拒且不播顶替项）；
 `npm run smoke` 21 项；Bundle ID `dshm-3c68b1072173`。**未跑 L3**。
+
+**B19 播放结束后无法重新开始（工作区未提交，2026-11-05）**
+
+- 重现（L1 假 engine，sequence 播完最后一首）：`trackId=b`、`cursor=1`、`positionMs=3000`、
+  `durationMs=3000`、`playing=false`、`engine.currentFile=null`；再点播放 → `load([b], 0, 3000)`
+  —— 既没有回到队首，又把"结束位置"当成 seek 目标，落点即终点，随即再次结束。
+- 根因：`handleEndOfTrack` 的 sequence 分支把"已播完"编码成 `positionMs = durationMs` 并保留
+  cursor 在最后一首；`resume()` 只有两种模式（暂停中解暂停 / 按 `positionMs` 重载），
+  无法区分"暂停"与"已播完"，于是把结束位置当成恢复位置。
+- 修复（`lib/host/player.js` 的 `resume()`，+13 行）：当**没有打开的文件**且
+  `durationMs > 0 && positionMs >= durationMs` 时，判定为"队列已播完"，`cursor = 0`、
+  `positionMs = 0`，从队首重新加载。判据全部来自现有字段，**未新增状态**；
+  暂停中的播放仍走原来的解暂停分支。
+- 未改：`handleEndOfTrack`（结束语义不变）、队列模型、Client、R08、B15 API、all/one/shuffle。
+
+验证（当次运行）：`npm test` **91/91**（+2：播完重新开始、暂停恢复位置）；
+`npm run test:l2` **29/29**（+1：真实 mpv 播完 sequence 后按播放 → 打开第一首、位置接近 0、
+1.5s 后仍在播）；`npm run smoke` 21 项。**未跑 L3**。
+
+**F1 暂停回包滞后（工作区未提交，2026-11-05，可靠性专项第一轮发现）**
+
+- 现象：`player.pause()` 返回的 snapshot 里 `paused:false`，而 mpv 的 `pause` 已经是 `true`
+  —— 隔离真实 mpv 20 次中 **18 次**。证据取自 `engine.getProperty('pause')`，与 Host 快照独立。
+- 根因：`api.pause()` → `player.pause()` → `engine.pause()` 这条链上，只有 `command('set_property')`
+  被 await；`engine.state.pause` 由**观察到的属性变更事件**更新，回包因此用旧镜像生成快照。
+  与 C1 修过的 stop / 暂停重载**同源**：把"命令已 ack"当成"状态已生效"。
+- 修复位置：**Engine 边界**。`engine.pause(flag)` 现在事件驱动地等 `pause` 属性变为目标值
+  （400ms 上限），返回 `{ok, reason, paused}`；`reason` ∈ `ok / timeout / engine-down`。
+  `player.pause()` / `resume()` 的取消暂停在 `ok !== true` 时**抛错**（API 回 `ok:false`，不再伪装成功）；
+  暂停重载路径只记日志，因为触发它的队列编辑已经成功。
+  `loadWithFade` 里原先重复的 `awaitEngine(() => engine.state.pause === true)` 已删除——确认只有一个地方。
+- 超时边界：**400ms**（`PAUSE_CONFIRM_TIMEOUT_MS`）。等待是事件驱动的：命中 `pause` 属性变更立即返回；
+  否则定时器到期返回 `{ok:false, reason:'timeout'}`。两条路径都会 `clearTimeout` 并从 `listeners`
+  删除临时监听，`settled` 标志防重复结算；引擎重启期间最坏等满 400ms 后自行清理，不留悬挂监听。
+- 未改：淡入淡出、播放模式、队列语义、Client、API 契约。
+
+验证（当次运行）：`npm test` **93/93**（+2：未确认的暂停必须失败、确认后的回包与快照一致）；
+`npm run test:l2` **30/30**（+1：连续 10 轮 pause/resume，每一次回包都必须是已确认状态）；
+`npm run smoke` 21 项；独立探针复测 **0/20 陈旧**（修复前 18/20）。**未跑 L3**。

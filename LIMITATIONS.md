@@ -36,7 +36,8 @@
 | **B16** | 队列视图高亮行与实际播放曲目不一致：客户端把 `snapshot().cursor`（`plays` 的下标）当作 `queue` 的下标 | **已修**：`cursor` 现在索引的就是可见队列；客户端按 `trackId` 定位，两者一致 | 随机播放时不再错行 | 实机 `status`：`mode=shuffle`、`cursor=2`、`trackId` 在 `queue` 的位置是 4；改为按 `trackId` 定位后高亮正确。C1 之后两个下标空间合并 | 已修（L1 守卫） |
 | **B18** | 「清空待播放」用 `ids.slice(0, cursor + 1)`，同样是拿 `plays` 的下标切 `queue` | **已退役（不是修复）**：按决策 4 删除该功能，按钮改为「停止并清空队列」（`queue.clear`） | 随功能消失；`queue.set` 的裁剪调用点不复存在 | `test/client-source.test.mjs`「the queue panel clears the whole queue and never clips it by cursor」 | 已退役 |
 | **B17** | 顺序被重建后自然 EOF 失步：`baseCursor` 没有随顺序重排重新锚定，`pos` 事件映射到错误曲目 | **已修（工作区，待重启 L3）**：锚定现在只写在 `mirror()` 里，没有第二个写者 | 播放中 `move` 后自然播完，音频已换曲而 `trackId`／迷你行停在旧曲 | L1「a reordered queue keeps the auto-advance mapping anchored」；L2 真实 mpv「B17: a natural EOF after an order change…」 | 已修，待 L3 |
-| **B19** | 顺序播放播到最后一首后按「播放」，会立刻再次结束 | **本轮范围外的新发现**：`handleEndOfTrack` 用 `positionMs = durationMs` 表达"已播完"，`resume()` 又拿它当 `startMs` 去 seek | 用户点播放没有声音，像是卡住 | 隔离探针：sequence 播完 b 后 `resume()` → `load(paths, 0, 3000)`，而 b 的时长就是 3000ms（`docs/CURRENT.md` §6 待办） | 待修（不属 C1） |
+| **B19** | 顺序播放播到最后一首后按「播放」，会立刻再次结束 | **已修**：`handleEndOfTrack` 用 `positionMs = durationMs` 表达"已播完"，`resume()` 却把它当作重新加载的 seek 目标，且停在最后一首 | `resume()` 现在识别"播放头停在末尾且没有打开的文件"，从**队首 0:00** 重新开始；正常暂停仍从暂停位置恢复 | 修复前探针：`load([b], 0, 3000)`；修复后：`load([a, b], 0, 0)`。L1「playing again after a sequence queue ends…」、L2「10b. playing again after the queue ended rests…」 | 已修（L1 + L2），待 L3 |
+| **B20** | `player.pause()` 的返回快照可能仍是 `paused:false`，而 mpv 已经暂停 | **已修**：暂停确认下沉到 Engine 边界，命令被 ack 不再等同于状态已生效 | 写操作回包与 mpv 真实状态矛盾（隔离真实 mpv：20 次中 18 次）；Client 靠再 poll 一次掩盖 | 探针：修复前 18/20 陈旧，修复后 **0/20**；L2「F1: the pause op returns the state mpv has already confirmed」重复 10 轮 | 已修（L1 + L2），待 L3 |
 
 > **关于 B2**：早期把"客户端 bundle 只在宿主启动时加载"记作缺陷 B2；它其实是**宿主约束**
 > 而非本插件的缺陷，现已归入 [`ARCHITECTURE.md`](ARCHITECTURE.md) §8 约束 2。
