@@ -87,7 +87,7 @@ test('end of the last entry replays the same track in mode one', async (t) => {
 test('end of the last entry reshuffles in mode shuffle', async (t) => {
   const h = await createPlayerHarness(t, { random: () => 0 })
   await h.player.setMode('shuffle')
-  await h.player.playQueue(['a', 'b', 'c'], 0)
+  await h.player.playQueue(['a', 'b', 'c'], 2) // the last entry is playing
   const loads = h.engine.of('load').length
 
   h.engine.emit({ type: 'endFile', reason: 'eof' })
@@ -168,4 +168,24 @@ test('restoreQueue:false starts empty and honours the default volume', async (t)
   assert.equal(snap.trackId, null)
   assert.equal(snap.mode, 'all', 'even the stored mode is ignored without a queue')
   assert.equal(snap.volume, 55, 'the configured default volume applies instead')
+})
+
+test('a reordered queue keeps the auto-advance mapping anchored', async (t) => {
+  // Rewriting the queue moves the cursor while mpv keeps playing the same file
+  // at its own playlist-pos. If the anchor between the two is not refreshed, the
+  // next `pos` event lands one entry off — the snapshot then names a track that
+  // is not the one that started playing.
+  const h = await createPlayerHarness(t, { tracks: [
+    { id: 'a', durationMs: 3000 }, { id: 'b', durationMs: 3000 }, { id: 'c', durationMs: 3000 },
+  ] })
+  await h.player.playQueue(['a', 'b', 'c'], 1)   // b is playing, cursor 1
+  await h.player.move(0, 2)                      // queue [b, c, a], cursor 0
+  assert.equal(h.snap().cursor, 0)
+  assert.equal(h.snap().trackId, 'b', 'the reorder kept the same track playing')
+
+  h.engine.emit({ type: 'pos', value: 1 })       // mpv moves to its own slot 1
+  await settle()
+
+  assert.equal(h.snap().cursor, 1, 'the cursor advanced by one, not by the stale anchor')
+  assert.equal(h.snap().trackId, 'c', 'the snapshot follows the reordered queue')
 })

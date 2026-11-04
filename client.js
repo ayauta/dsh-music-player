@@ -23,7 +23,7 @@ window.__ModuleLoader__.load({
     // `node scripts/bundle-id.mjs --write`; `npm test` fails while it is stale.
     // Module scope on purpose: bundles are concatenated into one classic script,
     // where a top-level `const` would collide with another module's.
-    const BUNDLE_ID = 'dshm-ab394dbf0ec0' // dsh-music-bundle-id
+    const BUNDLE_ID = 'dshm-b690e5daba83' // dsh-music-bundle-id
 
     const React = require('react')
     const { useState, useEffect, useRef, useCallback, useSyncExternalStore } = React
@@ -158,7 +158,7 @@ window.__ModuleLoader__.load({
       'spec.fade': '淡入淡出',
       'queue.empty': '队列是空的',
       'queue.loading': '正在载入队列…',
-      'queue.clear': '清空待播放',
+      'queue.clear': '停止并清空队列',
       'queue.remove': '从队列移除',
       'queue.drag': '拖动排序',
       'state.noTrack': '未在播放',
@@ -296,7 +296,7 @@ window.__ModuleLoader__.load({
       'spec.fade': 'Fade',
       'queue.empty': 'The queue is empty',
       'queue.loading': 'Loading queue…',
-      'queue.clear': 'Clear upcoming',
+      'queue.clear': 'Stop and clear queue',
       'queue.remove': 'Remove from queue',
       'queue.drag': 'Drag to reorder',
       'state.noTrack': 'Nothing playing',
@@ -1197,44 +1197,38 @@ window.__ModuleLoader__.load({
 
     /* ────────────────────────── now playing ────────────────────────────── */
 
-    const MODE_ORDER = ['sequence', 'all', 'one']
-    const MODE_ICON = { sequence: 'sequence', all: 'repeat', one: 'repeatOne' }
-    const MODE_LABEL = { sequence: 'np.mode.sequence', all: 'np.mode.all', one: 'np.mode.one' }
-
-    /** Shuffle toggle — the left slot of Apple Music's transport row. */
-    function ShuffleButton({ mode }) {
-      const on = mode === 'shuffle'
-      return h('button', {
-        type: 'button',
-        className: 'dshm-ib dshm-focusable',
-        'data-active': on ? 'true' : undefined,
-        'aria-pressed': on ? 'true' : 'false',
-        'aria-label': t('np.mode.shuffle'),
-        title: t('np.mode.shuffle'),
-        onClick: (event) => {
-          event.stopPropagation()
-          guarded(command('player.mode', { mode: on ? 'all' : 'shuffle' }), t('np.mode.shuffle'))
-        },
-      }, h(Icon, { name: 'shuffle', size: 17 }))
+    /** The approved four modes, in the order the single button cycles them (R08). */
+    const MODE_CYCLE = ['sequence', 'all', 'one', 'shuffle']
+    const MODE_ICON = { sequence: 'sequence', all: 'repeat', one: 'repeatOne', shuffle: 'shuffle' }
+    const MODE_LABEL = {
+      sequence: 'np.mode.sequence',
+      all: 'np.mode.all',
+      one: 'np.mode.one',
+      shuffle: 'np.mode.shuffle',
     }
 
-    /** Repeat cycles 顺序 → 列表 → 单曲; the right slot of the transport row. */
-    function RepeatButton({ mode }) {
-      const current = mode === 'shuffle' ? 'all' : mode
-      const label = t(MODE_LABEL[current] ?? 'np.mode.all')
+    /**
+     * R08: one control for the four modes. Each press advances
+     * 顺序 → 列表 → 单曲 → 随机. The icon and the accessible name always come from
+     * the mode the Host reports, so the button cannot drift from the real state;
+     * switching modes only rewrites the upcoming order, never the current track.
+     */
+    function ModeButton({ mode }) {
+      const current = MODE_CYCLE.includes(mode) ? mode : 'all'
+      const next = MODE_CYCLE[(MODE_CYCLE.indexOf(current) + 1) % MODE_CYCLE.length]
+      const label = t(MODE_LABEL[current])
       return h('button', {
         type: 'button',
         className: 'dshm-ib dshm-focusable',
+        'data-mode': current,
         'data-active': current === 'sequence' ? undefined : 'true',
         'aria-label': label,
         title: label,
         onClick: (event) => {
           event.stopPropagation()
-          const index = MODE_ORDER.indexOf(current)
-          const next = MODE_ORDER[(index + 1) % MODE_ORDER.length]
           guarded(command('player.mode', { mode: next }), label)
         },
-      }, h(Icon, { name: MODE_ICON[current] ?? 'repeat', size: 17 }))
+      }, h(Icon, { name: MODE_ICON[current], size: 17 }))
     }
 
     /** Right-hand time: remaining, like Apple Music's miniplayer. */
@@ -1345,7 +1339,6 @@ window.__ModuleLoader__.load({
             h(RemainingText, { getPlayer }))),
 
         h('div', { className: 'dshm-pop-transport' },
-          h(ShuffleButton, { mode }),
           h(IconButton, {
             name: 'prev', label: t('mini.prev'), size: 'lg',
             onClick: () => guarded(command('player.prev'), t('mini.prev')),
@@ -1360,7 +1353,7 @@ window.__ModuleLoader__.load({
             name: 'next', label: t('mini.next'), size: 'lg',
             onClick: () => guarded(command('player.next'), t('mini.next')),
           }),
-          h(RepeatButton, { mode })),
+          h(ModeButton, { mode })),
 
         h('div', { className: 'dshm-pop-volume' },
           h(IconButton, {
@@ -1381,7 +1374,11 @@ window.__ModuleLoader__.load({
      */
     function QueuePanel({ player, tracksVersion }) {
       const ids = player?.queue ?? []
-      const cursor = player?.cursor ?? 0
+      // `cursor` indexes the same array this panel renders, so the playing row
+      // is the entry whose id is the current track. Deriving it from the id
+      // keeps the highlight correct even when a snapshot arrives mid-advance.
+      const currentId = player?.trackId ?? null
+      const currentIndex = currentId === null ? -1 : ids.indexOf(currentId)
       const [rows, setRows] = useState([])
       const [drag, setDrag] = useState(null)
 
@@ -1407,14 +1404,14 @@ window.__ModuleLoader__.load({
           h('span', { className: 'dshm-count' }, String(ids.length)),
           h('span', { className: 'dshm-grow' }),
           h('button', {
-            type: 'button', className: 'dshm-btn dshm-focusable',
-            onClick: () => guarded(command('queue.set', { ids: ids.slice(0, cursor + 1) }), t('queue.clear')),
+            type: 'button', className: 'dshm-btn dshm-focusable', 'data-destructive': 'true',
+            onClick: () => guarded(command('queue.clear', {}), t('queue.clear')),
           }, t('queue.clear'))),
         ids.map((id, index) => {
           const row = rows[index] ?? {}
-          const active = index === cursor
+          const active = index === currentIndex
           return h('div', {
-            key: `${id}-${index}`,
+            key: id,
             draggable: true,
             onDragStart: () => setDrag(index),
             onDragOver: (event) => event.preventDefault(),
@@ -1578,7 +1575,15 @@ window.__ModuleLoader__.load({
         setError(null)
         try {
           const kind = view === 'folders' ? 'folder' : view === 'albums' ? 'album' : view === 'artists' ? 'artist' : null
-          if (kind !== null && groupKey === null) {
+          if (view === 'queue') {
+            // The queue view renders the player's queue, not a library list.
+            // Asking the library for it returned the whole collection, which
+            // also made the toolbar count meaningless (B15) and would have let
+            // `playFrom` treat the entire library as the queue's source.
+            setTracks([])
+            setGroups([])
+            setGroupTitle(null)
+          } else if (kind !== null && groupKey === null) {
             setGroups((await call('library.groups', { kind })) ?? [])
             setTracks([])
             setGroupTitle(null)
@@ -1782,6 +1787,7 @@ window.__ModuleLoader__.load({
               : null,
             h('h1', { className: 'dshm-h1' }, title),
             view === 'settings' ? null : h('span', { className: 'dshm-count' }, loading ? t('lib.loading')
+              : showQueue ? `${status?.player?.queue?.length ?? 0} ${t('lib.tracks')}`
               : showGroups ? `${groups.length}`
               : showPlaylists ? `${playlists.length}`
                 : `${tracks.length} ${t('lib.tracks')}`),

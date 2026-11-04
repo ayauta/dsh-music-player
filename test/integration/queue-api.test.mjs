@@ -110,27 +110,44 @@ test('queue reads and write results agree (isolated, silent)', { timeout: 120000
     }
   })
 
-  await t.test('queue.clear empties both reads', async () => {
-    await call('queue.clear', {})
+  await t.test('queue.clear empties both reads and reports the engine as idle', async () => {
+    await call('queue.play', { ids: [a.id, b.id], startIndex: 0 })
+    const cleared = await call('queue.clear', {})
+    assert.equal(cleared.engineFile, null, 'the op itself already reports no file (mpv settles first)')
+    assert.equal(cleared.playing, false, 'and nothing is reported as playing')
     assert.deepEqual(await queueIds(), [])
     assert.deepEqual(await rows(), [])
   })
 
-  await t.test('DIAGNOSTIC (known behaviour, B14, real mpv): queue.set can desync the cursor from mpv', async () => {
-    // Registered as B14. Reached through the public op when the current entry is
-    // dropped from the new queue; the shipped client only ever calls it with the
-    // current entry included, which is why this has not been seen in the UI.
+  await t.test('B14: queue.set makes mpv follow when the playing entry is dropped', async () => {
+    // Replacing the queue so that the current entry disappears used to reset the
+    // cursor to the new head while mpv kept playing the dropped file: one
+    // snapshot then contradicted itself. The replacement has to move playback.
     await call('queue.play', { ids: [a.id, b.id, c.id], startIndex: 1 })
     assert.equal(await waitForEngineFile(b.path), true, 'mpv opened the second track')
 
     await call('queue.set', { ids: [a.id, c.id] })
 
     const player = (await status()).player
-    const engine = (await status()).engine
     assert.deepEqual(player.queue, [a.id, c.id])
     assert.equal(player.trackId, a.id, 'the snapshot reports the new head')
-    assert.equal(engine.currentFile, b.path, 'while mpv is still playing the dropped track')
-    assert.notEqual(player.trackPath, engine.currentFile, 'the two fields in one snapshot contradict each other')
+    assert.equal(await waitForEngineFile(a.path), true, 'mpv really opened it')
+    const engine = (await status()).engine
+    assert.equal(player.trackPath, engine.currentFile, 'the two fields in one snapshot agree')
+  })
+
+  await t.test('a queue replacement never resumes a paused player (real mpv)', async () => {
+    await call('queue.play', { ids: [a.id, b.id, c.id], startIndex: 1 })
+    await call('player.pause')
+    await sleep(300) // let mpv report the pause before the edit reads it
+
+    const current = (await status()).player.trackId
+    const rest = [a.id, c.id].filter((id) => id !== current)
+    const after = await call('queue.set', { ids: rest })
+
+    assert.equal(after.trackId, rest[0], 'the replacement reloaded the new head')
+    assert.equal(after.paused, true, 'and the op already reports the pause')
+    assert.equal(after.playing, false, 'nothing is playing')
   })
 
   await t.test('B10: play next opens the enqueued file (real mpv, shuffle)', async () => {
@@ -151,5 +168,73 @@ test('queue reads and write results agree (isolated, silent)', { timeout: 120000
     const after = (await status()).player
     assert.equal(after.trackId, c.id, 'the snapshot agrees with the file that is playing')
     assert.equal(after.trackPath, c.path, 'and so does the reported path')
+  })
+
+  await t.test('B17: a natural EOF after an order change reports the track that is playing', async () => {
+    // Rewriting the play order moves the cursor but not mpv's playlist-pos.
+    // With a stale anchor the snapshot named a different track than the audio.
+    await call('player.mode', { mode: 'all' })
+    await call('queue.play', { ids: [a.id, b.id, c.id], startIndex: 1 })
+    assert.equal(await waitForEngineFile(b.path), true, 'mpv opened the second track')
+
+    // Reorder while playing: the visible order changes, mpv's playlist index
+    // does not. The anchor between the two has to be refreshed.
+    await call('queue.move', { from: 0, to: 2 })
+
+    const started = Date.now()
+    let settled = null
+    while (Date.now() - started < 15000) {
+      const snapshot = await status()
+      const file = snapshot.engine.currentFile
+      if (snapshot.player.trackId !== b.id && file !== null && file !== b.path) { settled = snapshot; break }
+      await sleep(200)
+    }
+    assert.ok(settled !== null, 'the track advanced on its own')
+    assert.equal(settled.player.trackPath, settled.engine.currentFile,
+      'the snapshot names the file mpv is actually playing')
+  })
+
+  await t.test('C2: rewriting the tail near the end of a track keeps Host and mpv together', async () => {
+    // The write and the natural EOF race each other. Whatever order they land
+    // in, the snapshot afterwards must name the file mpv is really playing.
+    await call('player.mode', { mode: 'all' })
+    await call('queue.play', { ids: [b.id, c.id], startIndex: 0 })
+    assert.equal(await waitForEngineFile(b.path), true, 'mpv opened the 3s track')
+
+    await sleep(2300) // about 0.7s before the file ends
+    const edited = await call('queue.enqueue', { ids: [a.id], position: 'end' })
+    assert.deepEqual(edited.queue, [b.id, c.id, a.id], 'the edit landed')
+    assert.equal(edited.trackPath, edited.engineFile, 'the op snapshot is self-consistent')
+
+    const started = Date.now()
+    let settled = null
+    while (Date.now() - started < 12000) {
+      const snapshot = await status()
+      if (snapshot.player.trackId !== b.id && snapshot.engine.currentFile !== null) { settled = snapshot; break }
+      await sleep(150)
+    }
+    assert.ok(settled !== null, 'playback advanced on its own')
+    assert.equal(settled.player.trackPath, settled.engine.currentFile,
+      'the snapshot names the file that is playing')
+    assert.equal(settled.player.trackId, c.id, 'and it is the next queue entry')
+  })
+
+  await t.test('C2 (engine): the tail write refuses a moved current and reads the entries back', async () => {
+    const { service } = holder.host
+    await call('queue.play', { ids: [a.id, b.id, c.id], startIndex: 0 })
+    assert.equal(await waitForEngineFile(a.path), true, 'mpv opened the first track')
+
+    const refused = await service.engine.rewriteTail({ expectCurrent: c.path, tail: [b.path] })
+    assert.equal(refused.ok, false, 'a stale expectation is not written')
+    assert.equal(refused.reason, 'current-moved')
+    assert.equal(refused.seen, a.path, 'and the engine reports the file it really saw')
+
+    const accepted = await service.engine.rewriteTail({ expectCurrent: a.path, tail: [c.path] })
+    assert.equal(accepted.ok, true, 'the entries were read back and matched the request')
+    assert.equal(accepted.seen, a.path)
+    assert.equal(accepted.at, 0)
+    assert.equal(accepted.currentFile, a.path)
+
+    await call('queue.play', { ids: [a.id, c.id], startIndex: 0 })
   })
 })

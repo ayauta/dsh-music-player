@@ -59,3 +59,44 @@ test('every ErrorBoundary call site uses one of those two names', () => {
     )
   }
 })
+
+test('the transport keeps one four-state mode control (R08)', () => {
+  const source = readFileSync(clientPath, 'utf8')
+  const cycle = source.match(/const MODE_CYCLE = \[([^\]]+)\]/)?.[1]
+  assert.ok(cycle, 'MODE_CYCLE is missing')
+  assert.deepEqual(
+    cycle.split(',').map((part) => part.trim().replace(/^'|'$/g, '')),
+    ['sequence', 'all', 'one', 'shuffle'],
+    'the approved cycle is 顺序 → 列表 → 单曲 → 随机',
+  )
+  assert.ok(!source.includes('ShuffleButton'), 'the separate shuffle toggle must not come back')
+  assert.ok(!source.includes('RepeatButton'), 'the separate repeat button must not come back')
+  assert.equal((source.match(/h\(ModeButton, \{ mode \}\)/g) ?? []).length, 1,
+    'the transport row holds exactly one mode control')
+})
+
+test('the queue highlight follows the playing track, not the play-order cursor', () => {
+  const source = readFileSync(clientPath, 'utf8')
+  const panel = sliceBetween(source, 'function QueuePanel(', 'function LyricsPanel(')
+  assert.match(panel, /const currentIndex = /,
+    'the queue panel must derive the highlighted row from the playing track')
+  assert.ok(!/const active = index === cursor/.test(panel),
+    'the cursor indexes the queue, so the row is still found by id')
+})
+
+test('the queue panel clears the whole queue and never clips it by cursor', () => {
+  const source = readFileSync(clientPath, 'utf8')
+  const panel = sliceBetween(source, 'function QueuePanel(', 'function LyricsPanel(')
+  assert.ok(panel.includes("command('queue.clear'"), 'the destructive action is the one explicit clear op')
+  assert.ok(!/slice\(0,\s*cursor/.test(panel),
+    'clipping by the cursor cut the wrong entries under shuffle (B18); the feature is retired')
+})
+
+test('the queue view never asks the library for a track list (B15)', () => {
+  const source = readFileSync(clientPath, 'utf8')
+  const reload = sliceBetween(source, 'const reload = useCallback(async () => {', 'useEffect(() => { reload() }')
+  assert.ok(reload.includes("if (view === 'queue')"), 'the reload effect must special-case the queue view')
+  const branch = reload.slice(reload.indexOf("if (view === 'queue')"))
+  assert.ok(branch.slice(0, 400).includes('setTracks([])'),
+    'the queue view must not keep a library list around, otherwise playFrom would use it')
+})

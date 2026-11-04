@@ -126,11 +126,12 @@ test('DIAGNOSTIC (known behaviour, B11): repeat-one leaves the old queue tail in
   // needs its own impact analysis (AGENTS.md §4).
   const h = await createPlayerHarness(t)
   await h.player.playQueue(['a', 'b', 'c'], 0)
-  const trimsBefore = h.engine.of('trimTail').length
+  const writesBefore = h.engine.of('rewriteTail').length
 
   await h.player.setMode('one')
 
-  assert.equal(h.engine.of('trimTail').length, trimsBefore, 'the mirrored tail is not trimmed')
-  assert.equal(h.engine.of('append').length, 0, 'and nothing new is appended either')
+  assert.equal(h.engine.of('rewriteTail').length, writesBefore, 'the mirrored tail is not rewritten')
+  assert.deepEqual(h.engine.playlist(), [h.pathOf('a'), h.pathOf('b'), h.pathOf('c')],
+    'mpv still holds the old tail')
   assert.equal(h.snap().queue.length, 3, 'the user-visible queue is untouched')
 })
