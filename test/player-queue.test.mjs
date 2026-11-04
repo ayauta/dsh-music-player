@@ -300,6 +300,55 @@ test('a stop is not reported as done before the engine drops the file', async (t
   assert.equal(snap.playing, false, 'and it is not reported as playing')
 })
 
+test('jumping to a queue entry plays it and leaves the visible order alone', async (t) => {
+  // What the queue view needs: point at a row, play that row, change nothing.
+  const h = await createPlayerHarness(t, { tracks: ALL, random: () => 0 })
+  await h.player.playQueue(['a', 'b', 'c', 'd'], 0)
+  await h.player.setMode('shuffle')
+  const order = h.snap().queue.slice()
+  const target = order[2]
+
+  await h.player.jumpTo(2)
+
+  assert.deepEqual(h.snap().queue, order, 'the visible order is untouched')
+  assert.equal(h.snap().trackId, target, 'the clicked entry is playing')
+  assert.equal(h.snap().cursor, 2, 'the cursor is the row that was clicked')
+  assert.equal(h.engine.state.currentFile, h.pathOf(target), 'mpv opened the clicked entry')
+  assert.deepEqual(h.engine.playlist(), order.slice(2).map((id) => h.pathOf(id)),
+    'and the mirror starts at that entry')
+})
+
+test('jumping by track id follows the track, not the slot it had', async (t) => {
+  const h = await createPlayerHarness(t, { tracks: ALL })
+  await h.player.playQueue(['a', 'b', 'c'], 0)
+  await h.player.move(1, 2) // [a, c, b]
+  const loads = h.engine.of('load').length
+
+  const played = await h.player.jumpToTrack('b')
+
+  assert.equal(played, true)
+  assert.equal(h.snap().trackId, 'b', 'the chosen track plays, wherever it now sits')
+  assert.equal(h.snap().cursor, 2, 'the host resolved the position itself')
+  assert.equal(h.engine.state.currentFile, h.pathOf('b'))
+  assert.equal(h.engine.of('load').length, loads + 1)
+})
+
+test('an entry that is no longer queued plays nothing', async (t) => {
+  const h = await createPlayerHarness(t, { tracks: ALL })
+  await h.player.playQueue(['a', 'b', 'c'], 0)
+  await h.player.removeAt(1) // [a, c]
+  const fileBefore = h.engine.state.currentFile
+  const loads = h.engine.of('load').length
+
+  const played = await h.player.jumpToTrack('b')
+
+  assert.equal(played, false, 'the request is refused')
+  assert.equal(h.snap().trackId, 'a', 'whatever was playing keeps playing')
+  assert.equal(h.engine.state.currentFile, fileBefore)
+  assert.equal(h.engine.of('load').length, loads, 'nothing was loaded in its place')
+  assert.notEqual(h.snap().trackId, 'c', 'the entry that took the slot is not played')
+})
+
 test('clear stops playback and empties the mpv playlist', async (t) => {
   const h = await createPlayerHarness(t, { tracks: ALL })
   await h.player.playQueue(['a', 'b'], 0)

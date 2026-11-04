@@ -23,7 +23,7 @@ window.__ModuleLoader__.load({
     // `node scripts/bundle-id.mjs --write`; `npm test` fails while it is stale.
     // Module scope on purpose: bundles are concatenated into one classic script,
     // where a top-level `const` would collide with another module's.
-    const BUNDLE_ID = 'dshm-b690e5daba83' // dsh-music-bundle-id
+    const BUNDLE_ID = 'dshm-3c68b1072173' // dsh-music-bundle-id
 
     const React = require('react')
     const { useState, useEffect, useRef, useCallback, useSyncExternalStore } = React
@@ -1381,6 +1381,15 @@ window.__ModuleLoader__.load({
       const currentIndex = currentId === null ? -1 : ids.indexOf(currentId)
       const [rows, setRows] = useState([])
       const [drag, setDrag] = useState(null)
+      const lastDragAt = useRef(0)
+
+      // Play by track id, never by the index this render happens to hold: the
+      // snapshot can be a poll old, and a track that moved must still play.
+      const playRow = (id) => {
+        // A drag that just ended must not also be read as a click.
+        if (Date.now() - lastDragAt.current < 200) return
+        guarded(command('player.jump', { trackId: id }), t('np.queue'))
+      }
 
       useEffect(() => {
         let cancelled = false
@@ -1413,7 +1422,8 @@ window.__ModuleLoader__.load({
           return h('div', {
             key: id,
             draggable: true,
-            onDragStart: () => setDrag(index),
+            onDragStart: () => { lastDragAt.current = Date.now(); setDrag(index) },
+            onDragEnd: () => { lastDragAt.current = Date.now() },
             onDragOver: (event) => event.preventDefault(),
             onDrop: (event) => {
               event.preventDefault()
@@ -1421,6 +1431,20 @@ window.__ModuleLoader__.load({
               setDrag(null)
               if (from === null || from === index) return
               guarded(command('queue.move', { from, to: index }), t('np.queue'))
+            },
+            // Keyboard: the row is focusable and Enter/Space plays it. The
+            // remove button keeps its own activation (events from it are
+            // ignored here), so no button is nested inside another.
+            tabIndex: 0,
+            role: 'option',
+            'aria-selected': active ? 'true' : 'false',
+            onClick: () => playRow(id),
+            onKeyDown: (event) => {
+              if (event.target !== event.currentTarget) return
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                playRow(id)
+              }
             },
             className: 'dshm-row',
             'data-active': active ? 'true' : undefined,
@@ -1432,7 +1456,10 @@ window.__ModuleLoader__.load({
             h('div', { className: 'dshm-row-sub' }, row.artist ?? '')),
           h('button', {
             type: 'button', className: 'dshm-ib dshm-focusable', 'aria-label': t('queue.remove'),
-            onClick: () => guarded(command('queue.remove', { index }), t('queue.remove')),
+            onClick: (event) => {
+              event.stopPropagation()
+              guarded(command('queue.remove', { index }), t('queue.remove'))
+            },
           }, h(Icon, { name: 'minus', size: 14 })))
         }))
     }

@@ -219,6 +219,32 @@ test('queue reads and write results agree (isolated, silent)', { timeout: 120000
     assert.equal(settled.player.trackId, c.id, 'and it is the next queue entry')
   })
 
+  await t.test('B15: the jump follows the track, not the index it used to have', async () => {
+    // What the queue view sends: a track id. The host resolves the position
+    // against the queue it holds right now, so a moved track still plays and a
+    // removed one never turns into whatever took its slot.
+    await call('player.mode', { mode: 'all' })
+    await call('queue.play', { ids: [a.id, b.id, c.id], startIndex: 0 })
+    await call('queue.move', { from: 1, to: 2 }) // [a, c, b]
+    assert.deepEqual((await status()).player.queue, [a.id, c.id, b.id], 'the track moved')
+
+    const jumped = await call('player.jump', { trackId: b.id })
+    assert.equal(jumped.trackId, b.id, 'the chosen track plays wherever it now sits')
+    assert.equal(jumped.cursor, 2, 'the host resolved the position itself')
+    assert.equal(jumped.trackPath, jumped.engineFile, 'the snapshot agrees with mpv')
+    assert.equal(await waitForEngineFile(b.path), true, 'mpv opened the chosen track')
+
+    await call('queue.play', { ids: [a.id, b.id, c.id], startIndex: 0 })
+    await call('queue.remove', { index: 1 }) // [a, c]; b is gone
+    const before = (await status()).player
+    const refused = await call('player.jump', { trackId: b.id })
+
+    assert.equal(refused.trackId, before.trackId, 'a removed track does not start playback')
+    assert.equal(refused.engineFile, before.engineFile, 'and nothing was loaded in its place')
+    assert.deepEqual(refused.queue, [a.id, c.id])
+    assert.notEqual(refused.trackId, c.id, 'the entry that took the slot is not played')
+  })
+
   await t.test('C2 (engine): the tail write refuses a moved current and reads the entries back', async () => {
     const { service } = holder.host
     await call('queue.play', { ids: [a.id, b.id, c.id], startIndex: 0 })

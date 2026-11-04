@@ -92,6 +92,29 @@ test('the queue panel clears the whole queue and never clips it by cursor', () =
     'clipping by the cursor cut the wrong entries under shuffle (B18); the feature is retired')
 })
 
+test('the queue view plays the row that was clicked, without replacing the queue (B15)', () => {
+  const source = readFileSync(clientPath, 'utf8')
+  const panel = sliceBetween(source, 'function QueuePanel(', 'function LyricsPanel(')
+  assert.ok(panel.includes("command('player.jump', { trackId: id })"),
+    'a row click asks for the track, not for the position it happened to hold')
+  assert.ok(!panel.includes("command('queue.play'"),
+    'the queue view must never hand a track list back to the host')
+  assert.ok(!panel.includes('library.list'),
+    'and must not read the library for its rows')
+  assert.ok(/onKeyDown: \(event\) => \{[\s\S]{0,200}?event\.key === 'Enter'/.test(panel),
+    'the row is keyboard operable')
+  assert.ok(!/h\('button'[^)]*h\('button'/.test(panel),
+    'no button is nested inside another button')
+})
+
+test('the queue title counts the queue, not the library (B15)', () => {
+  const source = readFileSync(clientPath, 'utf8')
+  const at = source.indexOf('showQueue ? `')
+  assert.ok(at > 0, 'the toolbar must special-case the queue count')
+  assert.ok(source.slice(at, at + 120).includes('player?.queue?.length'),
+    'the count comes from the player snapshot, not from a library list')
+})
+
 test('the queue view never asks the library for a track list (B15)', () => {
   const source = readFileSync(clientPath, 'utf8')
   const reload = sliceBetween(source, 'const reload = useCallback(async () => {', 'useEffect(() => { reload() }')
