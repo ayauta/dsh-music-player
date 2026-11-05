@@ -151,6 +151,35 @@ Inspector 的 slot 与 active / 可见状态 / Git HEAD 与脏净 / 结果。
 > 本插件的 `guardedCell` 会在 shell 的边界**内侧**先接住渲染异常，因此本插件三处 slot 的崩溃
 > 对 shell 不可见，Inspector 会继续显示 `active: true`。判读规则见 `docs/CURRENT.md` §4。
 
+### 2.3 模型驱动的状态机回归（日常档 + 压力档）
+
+参考模型在 `test/support/queue-model.mjs`，按 DESIGN R13 / R07.c 与 DECISIONS D-14..D-17 的行为**重写**：
+不 `import lib/host`，也不调用生产里的 `normalize()` / `commit()` 求期望值——模型必须有能力与实现不一致。
+
+| 档位 | 命令 | 规模 | 成本 |
+|---|---|---|---|
+| 日常 | `npm test` 里的 `test/player-model.test.mjs` | 固定 seed `20261106`，20 runs × 8–20 命令 × 2 suite | ≈0.19s |
+| 压力 | `npm run test:stress` | 1000 runs × 60–100 命令 × 2 suite ≈ **15.7 万次状态转换** | ≈77s |
+| 扩展 | `npm run test:stress -- --runs 10000` | 需显式指定，不默认执行 | ≈13min |
+
+两条 suite：`exact`（sequence / all / one，每步与模型逐字段比对队列、cursor、mode、paused）与
+`shuffle`（排列不可预测，只查不变量与洗牌契约：条目集合不变、当前槽位不移动）。
+
+每次转换后检查：trackId 唯一且可用；cursor 不越界；`trackId === queue[cursor]`；
+有文件时 `engineFile === trackPath`；队列编辑不得让暂停中的播放器开始播放；mode 合法。
+
+失败时 `scripts/stress-model.mjs` 输出：
+
+- `seed` 与 `--suite/--runs/--max-length`，用同一 seed 重放整轮；
+- `first rule`：首个被违反的规则，附模型状态、播放器状态与已执行到的轨迹；
+- `reduced`：确定性 minimizer 压出的**缩减后的反例**（保留同一条被违反的规则，不保证全局最短），
+  以及 `--replay '<json>'` 直接重放该序列。
+
+fast-check 负责生成、seed 与数组 shrink；该属性是异步且带状态的，实测它在本仓库 **0 次 shrink**，
+缩减后的反例由 minimizer 给出（注入故障演练：92 条 → **3 条**，见验证记录）。
+
+受控性：`delay` 由 harness 注入（无淡变等待）、位置轮询在测试期间冻结、shuffle 使用固定线性同余流，
+因此"同 seed + 同初始数据 + 同命令序列"必然复现。全部运行使用假 engine：不启动 mpv、不碰真实队列或数据库。
 
 ---
 
@@ -208,6 +237,9 @@ npm test                       # = node --test "test/*.test.mjs"
 - `dispose → init` 往返与异常存档降级
 
 未覆盖、也不打算在 L1 覆盖：淡变的听感与真实时序、mpv 的无缝推进竞态（L2）、UI 高亮（L3）。
+
+**模型驱动的随机回归（2026-11-06 加入）**：`test/player-model.test.mjs` 随 `npm test` 一起跑；
+更长的扫描用 `npm run test:stress`（详见 §2.3）。两者都用假 engine，不启动 mpv。
 
 ### L2 — Host 集成（隔离、无声）
 
@@ -321,6 +353,9 @@ npm run smoke -- --library <path> --allow-real-library   # 只读诊断，需显
 | 2026-11-05 | Automated | 工作区（B19，未提交） | L2 | `npm run test:l2`（隔离 `DSH_HOME` + `--ao=null`） | **Passed**：29 tests / 0 fail；新增「10b. playing again after the queue ended restarts from the first track」：播完 b 后 `player.play` → `trackId=a`、`cursor=0`、`engineFile=a.path`、`positionMs < 1000`，1.5s 后仍在播 | 脚本 | 真实 mpv 下确认重新打开第一首且不再立即结束；**不覆盖**声音输出 |
 | 2026-11-05 | Automated | 工作区（F1，未提交） | L1 | `npm test` | **Passed**：93 tests / 0 fail；新增「a pause the engine does not confirm fails instead of reporting a stale snapshot」（假 engine `failNextPause` → `player.pause()` 必须 reject）与「a confirmed pause is reflected in the snapshot the op returns」 | 脚本 | 证明超时不再伪装成功；**不覆盖**真实 mpv 属性时序（假 engine 只建模契约） |
 | 2026-11-05 | Automated | 工作区（F1，未提交） | L2 | `npm run test:l2`（隔离 `DSH_HOME` + `--ao=null`） | **Passed**：30 tests / 0 fail；新增「F1: the pause op returns the state mpv has already confirmed」：连续 10 轮暂停/恢复，**每一次回包**都必须是已确认状态（修复前 20 次中 18 次陈旧） | 脚本 | 断言的是操作自身的返回值，不是事后的 status |
+| 2026-11-06 | Automated | 工作区（模型测试固化，未提交） | L1 | `npm test`（含新增 `test/player-model.test.mjs` 日常档） | **Passed**：95 tests / 0 fail / 935ms；模型档 2 suite × 20 runs，固定 seed `20261106` | 脚本 | 覆盖 16 类命令；**不覆盖**真实 mpv 时序与 UI |
+| 2026-11-06 | Automated | 工作区（模型测试固化，未提交） | 压力 | `npm run test:stress` | **Passed**：1000 runs × 2 suite，**157,312** 次状态转换 / 77.4s | 脚本 | 假 engine；不启动 mpv、不碰真实队列 |
+| 2026-11-06 | Automated（**故障注入演练**） | 工作区（模型测试固化，未提交） | 压力 | 临时删掉 EOF 驱动的 `pos` 事件 → `npm run test:stress -- --runs 300` | **Failed（预期）**：seed `20261106`；fast-check 0 次 shrink；minimizer 把 92 条压到 **3 条**；`--replay` 复现同一失败；还原后重跑 **Passed** | Agent | 注入只发生在 `test/support/queue-model.mjs`，已还原；生产代码未改动 |
 | 2026-11-02 | Automated | 工作区（Phase 0B-3 复审后，未提交） | L2 | `npm run test:l2` | **Passed**：22 tests / 0 fail / 24.3s；`ao=null`；临时根已删除 | 脚本 | 播放与队列语义未受本轮影响 |
 | 2026-11-02 | Automated | 工作区（Phase 0B-3 复审后，未提交） | L2 | `npm run smoke` | **Passed**：21 checks / 0 fail；`temp root removed` | 脚本 | 仅回归 |
 | 2026-11-02 | **Manual** | 工作区（Phase 0B-3 复审后）+ 重启后实例（`0.2.1-rc.5 / d4db512`，端口 64519） | L3 | 用户重启 → `bundle-id --served` 复跑 → `cordis_inspect_query` client/`Slots`（4 个 root）→ `capture-window.ps1` 截图 | **Passed（部分项）**：① served rev `bf6085bd2344` 与 Host 一致、内容与 `dshm-67b0677998e1` 相同；② 四个 slot 均 `active: true`（`dsh-music`/`music`/`music`/`dsh-music`）；③ 迷你行渲染出真实曲目与三键行（截图 `%TEMP%\dsh-music-l3.png`）。**未取得**：`data-dsh-music-bundle` 字面值（无 DOM 通道）、音乐库/队列页是否正常（B1 未观察） | Agent | 只覆盖该次重启、该端口；`active:true` 不证明 React 渲染成功 |
