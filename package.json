@@ -32,6 +32,10 @@
     "test:l2": "node --test \"test/integration/*.test.mjs\"",
     "smoke": "node scripts/service-smoke.mjs",
     "test:live": "node scripts/playback-test.mjs",
-    "perf": "node scripts/loadtest.mjs"
+    "perf": "node scripts/loadtest.mjs",
+    "test:stress": "node scripts/stress-model.mjs"
+  },
+  "devDependencies": {
+    "fast-check": "4.10.2"
   }
 }
