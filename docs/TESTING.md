@@ -39,6 +39,7 @@
 | `test/player-eof-persist.test.mjs` | L1 | ✅ 安全 | 无 | 四态 EOF、解码错误、`dispose → init` 往返、异常存档降级（10 例，全回归） |
 | `test/support/player-harness.mjs` | L1 支撑 | ✅ 安全 | 无 | 假 engine（记录命令 + 可回推事件）、假 db（Map）、`delay: () => Promise.resolve()` |
 | `test/integration/queue-api.test.mjs` | L2 | ✅ 隔离无声 | **无声**（`--ao=null`）、仅临时根 | `queue.list ↔ snapshot` 顺序与元数据一致、写操作回包一致性（7 回归）+ B14 真实 mpv 复现（1 诊断） |
+| `test/integration/scan.test.mjs` | L2 | ✅ 隔离无声 | 仅临时根；真实 `node:sqlite`；**stub ffprobe**（不启动 mpv、不需要 ffmpeg） | 扫描结局守恒与生命周期（8 例，含"探测失败不动既有行/收藏/歌单"）：单根守恒、探测失败 → `partial`、写入失败不计入 unchanged、每根独立、全失败 → `error`、sweep 崩溃 → `error` 且索引=已提交状态、重扫覆盖、v1 schema 升级与幂等 |
 | `scripts/bundle-id.mjs` | — | ✅ **只读**（仅 `--write` 写文件） | 默认不联网、不写；`--write` 只改标记行；`--served` 只发回环 GET | Bundle ID 校验、`--served` 宿主字节比对、`--runtime` 运行时比对（见 §2.2） |
 | `test/bundle-id.test.mjs` | L1 | ✅ 安全 | 临时目录（`mkdtemp`） | 指纹一致性 / 标记唯一性 / 换行归一 / `--write` 幂等 / 缺标记与重复标记拒绝 / 运行时值比对（9 例） |
 | `test/client-source.test.mjs` | L1 | ✅ 安全 | 只读 `client.js` | **静态守卫**（无 DOM 渲染器）：`Cover` 不得解引用可为 null 的 `track`；`ErrorBoundary` 必须同时支持 `fallback` 与 `makeFallback`，且所有调用点使用其中之一。3 例 |
@@ -374,6 +375,20 @@ npm run smoke -- --library <path> --allow-real-library   # 只读诊断，需显
 | 2026-11-02 | Automated | 工作区（B17 + R08，未提交） | L2 | `npm run smoke` | **Passed**：21 checks / 0 fail；`temp root removed` | 脚本 | 仅回归 |
 | 2026-11-02 | Automated（只读接口） | 运行中实例（端口 49898） | — | `POST /music/api {op:"status"}` 读取快照 | **确认根因**：`mode=shuffle`、`cursor=2`、`trackId` 的队列下标是 4 → 高亮错行 | Agent | 只读；未改动任何队列/设置 |
 | 2026-11-02 | **Manual** | 工作区（B16 修复，**HMR 预览，未重启**） | L3（预览） | 打开「音乐」→「播放队列」→ 截图 `%TEMP%\b16-queue-fixed.png` | **Passed（预览）**：5 行队列中最后一行「天上飞琼」高亮，与迷你播放器一致；修复前同位置高亮「莲梦」 | Agent | 不是 L3 验收：HMR 热替换，未重启；标题仍显示整库 85 首（B15） |
+| 2026-11-06 | Automated | 基线 `f0ad2e0`（扫描台账 C1 实施前） | L2 | `node --test test/integration/scan.test.mjs`（第 1 次 Red） | **Failed（预期）**：`5 !== 3`——根 2 的 `scanned` 把根 1 的两个文件也算进来 | 脚本 | 证明"每根独立计数"这条断言能抓住跨根累加 |
+| 2026-11-06 | Automated | 工作区（扫描台账 C1 第 1 步后） | L2 | 同上（第 2 次 Red） | **Failed（预期）**：`1 !== 3`——两个探测失败的文件没有结局，`scanned` 停在 1 | 脚本 | 证明"失败也要有结局"这条断言能抓住失败不计数 |
+| 2026-11-06 | Automated | 工作区（探测失败已计数后） | L2 | 同上（第 3 次 Red） | **Failed（预期）**：`0 !== 1`——数据库写入失败走了 catch，只记日志、不进 `failed` | 脚本 | 证明写入失败与"未变化"确实会被混淆，且断言能区分二者 |
+| 2026-11-06 | Automated | 工作区（失败计数完成后） | L2 | 同上（第 4 次 Red） | **Failed（预期）**：`'running' !== 'error'`——sweep 抛错后行永久停在 `running` | 脚本 | 证明"异常必须收尾"这条断言能抓住生产缺陷 |
+| 2026-11-06 | Automated | 工作区（扫描台账 C1，未提交） | L2 | `node --test test/integration/scan.test.mjs` | **Passed**：7/7 / 0.38s；隔离 `DSH_HOME` + 真实 `node:sqlite` + stub ffprobe；不启动 mpv | 脚本 | 结局守恒、`partial/error` 判据、首条原因、每根独立、索引=已提交状态、v1→v2 升级与幂等；**不覆盖**真实 ffprobe 时序与真实库 |
+| 2026-11-06 | Automated | 工作区（扫描台账 C1，未提交） | L1 | `npm test` | **Passed**：95 tests / 0 fail / 0.98s | 脚本 | 本轮未改播放代码，播放与队列断言为回归确认 |
+| 2026-11-06 | Automated | 工作区（扫描台账 C1，未提交） | L2 | `npm run test:l2`（隔离 `DSH_HOME` + `--ao=null`） | **Passed**：38 tests / 0 fail / 26.6s；临时根已删除 | 脚本 | 30 例既有 + 8 例扫描；**不覆盖**真实音频输出 |
+| 2026-11-06 | Automated | 工作区（扫描台账 C1，未提交） | L2 | `npm run smoke`（夹具模式） | **Passed**：21 checks / 0 fail；`temp root removed` | 脚本 | 仅回归确认 |
+| 2026-11-06 | Automated（**真实库的隔离副本**） | 工作区（扫描台账 C1，未提交） | — | 复制 `library.db`（含 `-wal`/`-shm`）到临时目录 → 用新 `openDatabase` 连续打开两次 | **Passed**：`user_version 1→2`；tracks 85→85（track id 全同）；4 条历史 run 保留且 `failed=0`；重复打开幂等；副本已删除 | Agent | **真实库未被打开或修改**；仅证明迁移本身，不证明真实宿主启动路径（见下两行） |
+| 2026-11-06 | Automated（**真实宿主，用户授权**） | 工作区（扫描台账 C1，未提交）；用户重启后的实例（端口 60438） | L3 | ① 只读核对库与 API；② `POST /music/api {op:'library.scan'}`（全库）→ 轮询 `status` → 读 `library.scanStatus`；③ `library.list` + `queue.list` + `status` 一致性核对 | **Passed**：`user_version 1→2`、`failed` 列就位、85 行与 track id 原样、4 条历史 run 保留；全库重扫 **344 ms**，四根各自 `total/scanned/skipped` = `41/41/41`、`12/12/12`、`12/12/12`、**`20/20/19`**（1 首因 mtime 漂移重新探测），全部 `done` / `failed 0` / `error null`（修复前会写成 41、53、65、20）；`library.list` 85 = `status.tracks` 85 = 库存 85；队列 6 条 id **全部仍可解析**，当前曲仍在库内 | Agent | **有副作用**：本轮扫描覆盖了真实库的 4 行 `scan_runs` 与 `roots.last_scan_at`，并因磁盘 mtime 漂移**原地更新**了 1 个 track 行（`id` 与 `added_at` 不变）。未改曲目集合、收藏、歌单、队列、播放状态 |
+| 2026-11-06 | Automated | 同上（真实宿主 + 2026-11-04 备份库对照） | L3 | 检查被重新探测的那一行（`被生命所厌恶。（中文版）.flac`）与备份库、磁盘三方比对 | **符合预期**：备份里 `mtime=1793293691082`，磁盘 `1793293721280`（**+30 198 ms**），`size` 未变 → 走 `(size, mtime)` 快路径判定为"已漂移"，重新探测后原地更新；扫描未误判，也不是重复入库 | Agent | 证明"未变化"快路径确实按磁盘事实工作；**不覆盖**失败分支（真实库不能注入损坏文件，该分支由 `test/integration/scan.test.mjs` 覆盖） |
+| 2026-11-06 | Automated（**只读复核**） | 工作区（扫描台账 C1，未提交）+ 运行中实例（端口 60438） | L3 | 对同一 root、同一次 run 三方对照：`scan_runs` 行、`library.scanStatus`、该时间窗内的进度日志 | **Passed（澄清报告笔误）**：三处一致为 `total 20 / scanned 20 / skipped 19 / failed 0`，守恒 `20 = 19 未变化 + 1 更新 + 0 失败`；日志里的 `scanned:19` 是 **19/20 时的中途快照**，`phase:'done'` 才是 20。上一轮汇总表把 `skipped` 填进了 `scanned` 列 | Agent | 只读：未触发扫描、未写库；证明差异来自报告口径，而非代码或持久化 |
+| 2026-11-06 | Automated | 工作区（扫描台账 C1，未提交） | L2 | `node --test test/integration/scan.test.mjs`（新增 1 例） | **Passed**：8/8 / 0.43s；新增「a probe failure leaves the existing row, its favorite and its playlist entry alone」：已有行 + 文件 mtime 变化 + 探测失败 → `partial` / `failed=1` / `skipped=2`，旧行**不置 missing**、无重复行、收藏与歌单引用不变；恢复正常探测后重扫 `done` / `failed=0`，行内 mtime 更新为新值 | 脚本 | 覆盖"探测失败不得把既有行变成 missing"这条安全边界；**不覆盖**真实 ffprobe 时序 |
+| 2026-11-06 | Automated（**临时变异，已还原**） | 工作区（扫描台账 C1，未提交） | L2 | 在探测失败分支临时插入 `db.setMissing([id], true)` → 跑 `--test-name-pattern "leaves the existing row"` | **Red（预期）**：失败于「a failed probe is not a missing file」（`true !== false`）；还原后重跑 1/1 通过 | Agent | 证明该守卫不是恒真断言；变异只存在于工作区数秒，未入库 |
 
 **关于最后一条的说明**：
 
@@ -410,6 +425,7 @@ npm run smoke -- --library <path> --allow-real-library   # 只读诊断，需显
 | P0 | bundle 版本确认手段 | L3 | 没有它，所有客户端"已验证"不可信 | 未开始 |
 | P0 | `playback-test` 逻辑迁移到隔离 L2 | L2 | 从禁止清单中移除的前提 | ✅ **已完成**（12 组断言，`test/integration/playback.test.mjs`） |
 | P1 | `package.json` 增加 `scripts`（`test` / `test:l2` / `smoke`） | — | 降低误用与连错端口 | ✅ 已完成 |
-| P1 | seek 一致性、持久化迁移 | L2 | 覆盖已知风险点 | 部分（seek 有）；迁移用例未开始 |
+| P1 | seek 一致性、持久化迁移 | L2 | 覆盖已知风险点 | 部分（seek 有）；**schema 升级已验证**（`scan_runs.failed`，v1→v2 + 幂等），见 `test/integration/scan.test.mjs` |
+| P1 | 扫描链路 L3（升级后首次真实扫描） | L3 | 重启 DSH 后确认 `user_version=2`、`library.scanStatus` 的 `done/partial/error` 与 `failed` | ✅ **已完成**（2026-11-06，见 §8：四根各自计数、`failed 0`、队列 6/6 可解析） |
 | P2 | 面板交互与窗口适配脚本 | L3 | 回归保护 | 未开始 |
 | P2 | 极端数据清单化 | L4 | 依 `break-ui` 的失败签名 | 未开始 |

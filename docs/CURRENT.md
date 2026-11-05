@@ -3,7 +3,7 @@
 > 每轮任务开始时读这里，结束时更新这里。它是"项目此刻在哪"的唯一来源；
 > 规范看 `docs/DESIGN.md`，验证证据看 `docs/TESTING.md`。
 
-最后更新：2026-11-05（C1 队列稳定化，工作区未提交）
+最后更新：2026-11-06（扫描台账 C1 已提交）
 
 ---
 
@@ -12,12 +12,12 @@
 | 项 | 值 |
 |---|---|
 | 分支 | `master`（无其它分支） |
-| 最近验证基线 | **Phase 0B-2 的测试与代码提交**：`208023c`（player 注入）、`34defc6`（L1）、`38f4faa`（L2）；验证在提交前的工作区完成，三者内容一致 |
+| 最近验证基线 | **扫描台账 C1（已提交，基线 `f0ad2e0`）**：L1 95/95、L2 38/38、Smoke 21 项、`git diff --check` 干净；见 §8 末尾。更早的 Phase 0B-2 基线：`208023c`（player 注入）、`34defc6`（L1）、`38f4faa`（L2） |
 | 更早的已提交基线 | `18e8cf5`（Phase 0B-1）→ `16bcd45`（Phase 0A） |
 | 当前 HEAD | 以 `git log -1` 为准；本轮最后一个是本文件所在的**文档提交**（不改变代码） |
 | 版本 | `package.json` → `1.7.0`（本轮未变） |
 | 标签 | **无**。计划中的 `baseline-v1.7.0` **必须指向 `b8dc624`**；打标签是单独的 Git 操作，尚未执行 |
-| 工作区 | Phase 0B-3 改动，**未提交**：新增 `scripts/bundle-id.mjs`、`test/bundle-id.test.mjs`；修改 `client.js`（标记常量 + `apply` 内一处 `ctx.effect`）、`docs/TESTING.md`、本文件。Phase 0B-2 的代码与测试已在库：`208023c` / `34defc6` / `38f4faa` |
+| 工作区 | **clean**。扫描台账 C1 由两个提交组成（代码/测试 + 文档），HEAD 以 `git log -1` 为准：`lib/host/library.js`、`lib/host/db.js`、新增 `test/integration/scan.test.mjs`，以及 `ARCHITECTURE.md` / `docs/DECISIONS.md`（D-18）/ `docs/TESTING.md` / 本文件 |
 
 已提交的治理与测试基线：
 
@@ -74,6 +74,7 @@
 | **B16** | 队列高亮行与实际播放曲目不一致（`cursor` 是 `plays` 的下标，被当成 `queue` 的下标） | **已修** | `cursor` 与可见队列同数组，客户端按 id 定位 | `LIMITATIONS.md` §一 B16 · 静态守卫 | 已修 |
 | **B18** | 「清空待播放」同样用 `cursor + 1` 切队列，会删错条目（最坏删掉正在播的） | **已退役**（按决策 4 删除该功能） | 按钮改为「停止并清空队列」（`queue.clear`） | `LIMITATIONS.md` §一 B18 · 静态守卫 | 已退役 |
 | **B17** | 顺序被重建后自然 EOF 状态失步：`baseCursor` 未随顺序重排重新锚定，`pos` 事件映射到错误曲目 | **已修（工作区，待重启 L3）**：锚定现在只写在 `mirror()` 里 | 音频已切到下一首，迷你行与队列仍显示上一首 | L1「a reordered queue keeps the auto-advance mapping anchored」；L2 真实 mpv「B17: a natural EOF after an order change…」 | 已修，待 L3 |
+| **扫描-C2** | 重命名识别不可用：`relocateTrack` 把旧行改写成候选行已占用的 `tracks.path`，必然撞唯一约束；扫描根重叠时文件被逐条丢弃（两者都曾"看起来成功"） | **Implementation Gap**（C1 已让它们以 `error` 结束，语义未改） | 改名后旧行残留、收藏/歌单仍指向旧 id；父根+子根同时注册会少入库 | `test/integration/scan.test.mjs`「sweep failure…」；隔离复现 88 walked → 44 入库 | **C2 待裁定**：幸存 ID 与事务边界（见 `ARCHITECTURE.md` §3 的已知缺口） |
 
 > **约束（原 B2）**：客户端 bundle 只在宿主启动时加载——这是**宿主约束**，已归入
 > [`ARCHITECTURE.md`](../ARCHITECTURE.md) §8 约束 2；B2 编号不再复用。
@@ -130,6 +131,8 @@ Phase 0B-3（Bundle ID）的取证状态——2026-11-02 02:09 用户重启后�
 
 ## 6. 下一步（按顺序）
 
+0*. **扫描链路 C2（未开始，待裁定）**：`mergeTracks`（幸存 ID、事务、三张引用表迁移）+
+   root 重叠校验。C1（结局台账与单一收尾）已完成，见 §8 末尾。
 0. **审核 C2**（本轮，未提交）：`engine.load` / `rewriteTail` 的确认语义 + Player 的采纳规则；
    L1 82 例、L2 26 例、Smoke 21 项通过。**本轮未跑 L3**（按新规约，真实宿主只做只读或经批准的人工验收）
 0b. ~~**B19**~~ 已修（本轮）：序列播完后 `resume()` 从队首 0:00 重新开始；正常暂停仍按位置恢复。待 L3
@@ -466,3 +469,68 @@ Engine 的一个**带确认语义**的操作；Player 只决定目标，从 Engi
 验证（当次运行）：`npm test` **93/93**（+2：未确认的暂停必须失败、确认后的回包与快照一致）；
 `npm run test:l2` **30/30**（+1：连续 10 轮 pause/resume，每一次回包都必须是已确认状态）；
 `npm run smoke` 21 项；独立探针复测 **0/20 陈旧**（修复前 18/20）。**未跑 L3**。
+
+**扫描台账 C1（工作区未提交，2026-11-06，基线 `f0ad2e0`）**
+
+> 命名注：本节的 C1/C2 指**扫描链路**架构评审的候选，与 2026-11-05 的队列 C1、镜像 C2 无关。
+
+目标：让"少了几首"这件事由 `scan_runs` 自己说清楚，并且异常不再留下 `running`。
+
+- `lib/host/library.js`
+  - 新增私有 `createScanRun()`：`indexed / unchanged / failed` 三个结局 + `scanned` 守恒；
+    `skipped` 在持久化快照里表示"未变化"（列名沿用旧 schema，翻译只发生在 `snapshot()`）。
+  - `scan()` 拆成 `scanRoot()`（只报告事实）+ `scan()`（独占生命周期：`try / catch / finally`）；
+    每个 root 一份台账，**跨根累加消失**。
+  - `persistRun()` 是唯一写 `scan_runs` 的出口，自身失败只记日志（不掩盖原始异常）；
+    `refresh()` 移进 `finally`；`complete()` 决定 `done / partial / error`；
+    `abort()` + `close()` 保证异常也收尾；`error` 只保留首条原因。
+- `lib/host/db.js`：`scan_runs.failed INTEGER NOT NULL DEFAULT 0`（schema `1→2`）；
+  升级按列名补齐 + `user_version` 落位，additive、零数据改写；`setScanRun` / `listScanRuns` 带上该列。
+- `test/integration/scan.test.mjs`（8 例，L2，隔离 `DSH_HOME`、真实 `node:sqlite`、stub ffprobe）：
+  单根守恒、探测失败 → `partial` + `failed=2` + 首条原因、写入失败不混进 unchanged、
+  每根独立计数、全失败 → `error`、sweep 崩溃 → `error` 且索引=已提交状态、重扫覆盖旧状态、
+  探测失败不动既有行/收藏/歌单（且下次扫描自愈）、v1 库升级后数据完好且幂等。
+
+验证（当次运行，工作区）：
+- `npm test` **95/95**（0.95 s，与本轮前一致）
+- `npm run test:l2` **38/38**（26.6 s；含新增 8 例；`ao=null`，临时根已删除）
+- `npm run smoke` **21 项通过**，`temp root removed`
+- `node --test test/integration/scan.test.mjs` **8/8**；`git diff --check` 干净（exit 0）
+- 红→绿：三次真实 Red 分别打在 `5 !== 3`（跨根累加）、`1 !== 3`（失败不计数）、
+  `0 !== 1`（写入失败不计数）、`'running' !== 'error'` 上，均由对应实现转绿；
+  新增的安全边界用例首跑即绿（守卫），再用临时变异 `db.setMissing([id], true)` 复核其敏感性
+  （红于「a failed probe is not a missing file」，随后还原）
+- 真实库**隔离副本**升级核对：85 行 → 85 行（track id 全同）、`user_version 1→2`、
+  4 条历史 run 保留、`failed` 读作 0、重复打开幂等；**真实库本身未被打开或修改**
+
+Schema 迁移与回退（AGENTS §11）：
+- 迁移：`openDatabase` 里 `PRAGMA table_info(scan_runs)` 缺 `failed` 时
+  `ALTER TABLE scan_runs ADD COLUMN failed INTEGER NOT NULL DEFAULT 0`，随后 `PRAGMA user_version = 2`。
+- 回退：`git revert` 本轮提交即可；v2 库被 v1 代码读取是安全的（新列有默认值，旧代码不写它）。
+- 历史 run 的数字**不改写**（升级前的行保留当时的累计口径）；新口径只对新 run 生效。
+
+C1 未做（明确）：
+- 未实现 `mergeTracks`、未改 root 重叠语义、未动 `removeRoot` 的引用迁移（C2）
+- 未改播放核心、API 契约（`scanStatus` 仅多一个 `failed` 字段）、Client UI
+- 未做"进程被强杀后 `running` 行恢复"：已登记在 §4，不引入任务恢复框架
+
+**扫描台账 C1 的 L3（2026-11-06 用户重启后，端口 60438）**
+
+- 真实库升级到位：`user_version 1→2`、`scan_runs.failed` 就位、**85 行与 track id 原样**、
+  4 条历史 run 保留（含升级前写入的累计口径 `53`/`65`，按设计**不改写**）。
+- 全库重扫 **344 ms**，四根各自 `total/scanned/skipped` = `41/41/41`、`12/12/12`、`12/12/12`、**`20/20/19`**（其中 1 首因 mtime 漂移重新探测），
+  全部 `done` / `failed 0` / `error null`——**跨根累加在真实库上消失**（修复前是 41、53、65、20）。
+- 对外一致：`library.list` 85 = `status.tracks` 85 = 库存 85；队列 6 条 id **全部仍可解析**，
+  当前曲仍在库内；`queue.list` 6 行元数据完整。
+- 唯一一次"非跳过"是**磁盘事实变化**：`被生命所厌恶。（中文版）.flac` 的 mtime 比索引记录晚
+  **30 198 ms**（size 未变），因此被重新探测并**原地更新**（`id` 与 `added_at` 不变）。
+  该 id 正是当前队列里的曲目 —— 扫描没有打断队列引用。
+- 日志：新 `done` 载荷带 `status`/`failed`；重启后 **0 条 warn/error**。
+- **口径修正（2026-11-06 只读复核）**：上一轮汇总表把 `skipped=19` 误填进 scanned 列，看起来像
+  `total 20 / scanned 19`。持久化行、`library.scanStatus`、`phase:'done'` 日志三处一致为
+  **`scanned=20`**（日志里的 `scanned:19` 是 19/20 时的中途快照），守恒
+  `20 = 19 未变化 + 1 更新 + 0 失败` 成立 → **代码与持久化无缺陷，只改报告口径**。
+- 副作用：本次扫描覆盖了真实库 4 行 `scan_runs` 与 `roots.last_scan_at`，并更新了上面那 1 行 track
+  的探测字段；未改曲目集合、收藏、歌单、队列、播放状态。
+- 未覆盖：失败分支（真实库不能注入损坏文件）由 L2 的 `test/integration/scan.test.mjs` 覆盖；
+  强杀恢复仍未验证。
