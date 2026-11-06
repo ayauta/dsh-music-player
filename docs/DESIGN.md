@@ -33,7 +33,7 @@
 - **单一事实来源**：本文件只写产品/视觉/交互规范；实现细节看 `ARCHITECTURE.md`，
   验证方法与结果看 `docs/TESTING.md`，决策原因看 `docs/DECISIONS.md`，进度看 `docs/CURRENT.md`。
 
-最后更新：2026-11-02（R08 实现状态更新为 Implemented；R06 仍为缺口）
+最后更新：2026-11-07（新增 R14 曲目身份与来源生命周期；R08 仍待 L3）
 
 ---
 
@@ -54,6 +54,7 @@
 | **R11** | 优先支持 Windows 系统多媒体键 | Approved | **Not implemented** | **Not tested** | —（未实测） | 运行路径未验证，**不是确认不可实现**；见子项与 `docs/DECISIONS.md` D-07 |
 | **R12** | 动效审查以 emilkowalski/skills 的实际文件与章节为依据（高频克制、直接操控、可中断、性能） | Approved | Partial | Not tested | —（尚无审查记录） | 仅一个全局缓动 `--dshm-ease = cubic-bezier(.32,.72,0,1)` 用于所有场景；时长散落 90–180ms，无 token |
 | **R13** | 播放队列 = 唯一 trackId 的**单一可见播放顺序**：同一曲目不重复；「下一首播放」移动已有条目；随机只重排当前之后；「停止并清空队列」是唯一破坏性队列操作 | Approved | Implemented | Not tested | 工作区（未提交） | L1 21 例 + L2 真实 mpv 通过；**L3 未验证**（需重启 DSH）。见 `docs/DECISIONS.md` D-14 / D-15 / D-16 |
+| **R14** | 曲目身份：路径用于自动识别已有记录，`trackId` 是持久身份；自动扫描不依据指纹推断文件移动。同一路径重扫沿用原 id；同一路径换内容沿用 id 只更新元数据；不同路径就是不同曲目（内容相同也不合并）；**扫描不推断改名**——旧路径的行标 `missing` 并保留收藏/歌单/覆盖/队列引用；移除来源只停止扫描，不删曲目行，重新添加同一路径恢复原 id 与关联；扫描根不得互相包含（历史重叠只报告）；目录不可读时扫描报错且不把整根曲目标 missing | Approved | Partial | Not tested | 工作区（未提交，基线 `94ece94`） | 已实现：身份/缺失/来源生命周期/根重叠/扫描安全（L2 19 例）。**未实现**：`track.relocate`（单曲重新定位）、`roots.relocate`（整文件夹搬家）、缺失项的界面呈现与"定位文件"入口——见 `docs/CURRENT.md` §6。规则见 `ARCHITECTURE.md` §3、`docs/DECISIONS.md` D-19 / D-20 |
 
 ### 1.1 子项
 

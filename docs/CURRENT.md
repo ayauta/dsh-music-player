@@ -3,7 +3,7 @@
 > 每轮任务开始时读这里，结束时更新这里。它是"项目此刻在哪"的唯一来源；
 > 规范看 `docs/DESIGN.md`，验证证据看 `docs/TESTING.md`。
 
-最后更新：2026-11-06（扫描台账 C1 已提交）
+最后更新：2026-11-07（C2 瘦身 Phase 1，工作区未提交）
 
 ---
 
@@ -12,12 +12,13 @@
 | 项 | 值 |
 |---|---|
 | 分支 | `master`（无其它分支） |
-| 最近验证基线 | **扫描台账 C1（已提交，基线 `f0ad2e0`）**：L1 95/95、L2 38/38、Smoke 21 项、`git diff --check` 干净；见 §8 末尾。更早的 Phase 0B-2 基线：`208023c`（player 注入）、`34defc6`（L1）、`38f4faa`（L2） |
+| 最近验证基线 | **C2 瘦身 Phase 1（工作区未提交，基线 `94ece94`）**：L1 95/95、L2 51/51、Smoke 21 项、`git diff --check` 干净；见 §8 末尾。上一条已提交基线：扫描台账 C1 `f0ad2e0`（L1 95/95、L2 38/38、Smoke 21）。更早：Phase 0B-2 基线 `208023c`（player 注入）、`34defc6`（L1）、`38f4faa`（L2） |
 | 更早的已提交基线 | `18e8cf5`（Phase 0B-1）→ `16bcd45`（Phase 0A） |
 | 当前 HEAD | 以 `git log -1` 为准；本轮最后一个是本文件所在的**文档提交**（不改变代码） |
 | 版本 | `package.json` → `1.7.0`（本轮未变） |
 | 标签 | **无**。计划中的 `baseline-v1.7.0` **必须指向 `b8dc624`**；打标签是单独的 Git 操作，尚未执行 |
-| 工作区 | **clean**。扫描台账 C1 由两个提交组成（代码/测试 + 文档），HEAD 以 `git log -1` 为准：`lib/host/library.js`、`lib/host/db.js`、新增 `test/integration/scan.test.mjs`，以及 `ARCHITECTURE.md` / `docs/DECISIONS.md`（D-18）/ `docs/TESTING.md` / 本文件 |
+| 工作区 | **clean**（两个提交：`cdd60aa` 代码/测试 + 文档提交）：`lib/host/db.js`、`lib/host/library.js`、`test/integration/scan.test.mjs`、`ARCHITECTURE.md`、`LIMITATIONS.md`、`docs/DECISIONS.md`（D-19 / D-20）、`docs/DESIGN.md`（R14）、`docs/TESTING.md`、本文件 |
+| 数据库 schema | 代码 **v2**（`SCHEMA_VERSION = 2`，代码从不写 `conflicts`）。**真实 `library.db` 目前是 v3**：2026-11-06 02:33 被已否决的 C2 构建（当时 `SCHEMA_VERSION = 3`）在宿主里升级过，多出 `scan_runs.conflicts`（默认 0）。已用**隔离副本**验证 v2 代码可读写该文件：85 行 id 不变、run 可读写、`user_version` 保持 3（不降级、不报错）。本轮与上一轮的全部测试都没有打开过真实文件 |
 
 已提交的治理与测试基线：
 
@@ -45,6 +46,11 @@
 - 迷你播放器：宿主行几何、封面 40px、点击/拖动进度、五键传输行
 - 播放面板：封面优先、标题/艺术家、进度与剩余时间、音量行、打开/关闭/焦点
 - 音乐库：41 首实测库、七类视图、搜索、排序、右键菜单、封面与规格
+- **曲库身份与来源**：同一路径重扫沿用原 id 与元数据；不同路径各自成曲；改名/移动＝新曲目 + 旧行
+  `missing`（引用保留）；移除来源只停止扫描（行与收藏/歌单/队列引用都在），重新添加同一路径恢复原 id；
+  扫描根重叠拒绝（历史重叠只报告）；目录不可读时扫描报错且不误标 missing。见 `ARCHITECTURE.md` §3
+- **未实现**（不要当成可用）：手动重新定位（单曲 / 整文件夹）、缺失项的界面呈现与"定位文件"入口 —
+  见 §6
 - 设置：库内嵌页 + `settings.section` 双挂载
 - Host API：`queue.*`（含 `queue.list`）、`player.*`、`library.*`、`prefs.*`
 - **L1 播放状态机测试**（29 例 = 24 回归 + 5 诊断；假 engine + 注入 `delay`/`random`；
@@ -74,7 +80,9 @@
 | **B16** | 队列高亮行与实际播放曲目不一致（`cursor` 是 `plays` 的下标，被当成 `queue` 的下标） | **已修** | `cursor` 与可见队列同数组，客户端按 id 定位 | `LIMITATIONS.md` §一 B16 · 静态守卫 | 已修 |
 | **B18** | 「清空待播放」同样用 `cursor + 1` 切队列，会删错条目（最坏删掉正在播的） | **已退役**（按决策 4 删除该功能） | 按钮改为「停止并清空队列」（`queue.clear`） | `LIMITATIONS.md` §一 B18 · 静态守卫 | 已退役 |
 | **B17** | 顺序被重建后自然 EOF 状态失步：`baseCursor` 未随顺序重排重新锚定，`pos` 事件映射到错误曲目 | **已修（工作区，待重启 L3）**：锚定现在只写在 `mirror()` 里 | 音频已切到下一首，迷你行与队列仍显示上一首 | L1「a reordered queue keeps the auto-advance mapping anchored」；L2 真实 mpv「B17: a natural EOF after an order change…」 | 已修，待 L3 |
-| **扫描-C2** | 重命名识别不可用：`relocateTrack` 把旧行改写成候选行已占用的 `tracks.path`，必然撞唯一约束；扫描根重叠时文件被逐条丢弃（两者都曾"看起来成功"） | **Implementation Gap**（C1 已让它们以 `error` 结束，语义未改） | 改名后旧行残留、收藏/歌单仍指向旧 id；父根+子根同时注册会少入库 | `test/integration/scan.test.mjs`「sweep failure…」；隔离复现 88 walked → 44 入库 | **C2 待裁定**：幸存 ID 与事务边界（见 `ARCHITECTURE.md` §3 的已知缺口） |
+| **扫描-C2** | 重命名识别不可用：`relocateTrack` 把旧行改写成候选行已占用的 `tracks.path`，必然撞唯一约束；扫描根重叠时文件被逐条丢弃 | **Implementation Gap（已收敛为产品契约）** | 改名后旧行残留、收藏/歌单仍指向旧 id | 修复前 `UNIQUE constraint failed: tracks.path` | **已定稿**：自动指纹合并被否决并删除；路径只用于自动识别已有记录，`trackId` 是持久身份；扫描不依据指纹推断文件移动（D-19）。改名＝新曲目 + 旧行 `missing`；根重叠在注册处拒绝、历史重叠只报告。L2 21 例 + 7 次变异核对 |
+| **扫描-C2a** | 跨 root 的移动不保留身份：旧行 `missing`、新行是新 id | **已知限制（产品选择）**：扫描按 root 顺序进行，不做跨根匹配 | 用户把专辑移进另一个根后，收藏仍挂在旧行 | L2 未覆盖（不存在的路径不猜） | 登记（`LIMITATIONS.md` §三 20）；是否支持待裁定 |
+| **B21** | `roots.remove` 删除了 tracks，收藏/歌单留下悬挂 id，重新添加路径得到全新 id | **已修**：移除来源只删 `roots` 与 `scan_runs`，曲目行保留并置 `missing`；重新添加同一路径恢复原 id 与引用 | 删根后歌单静默少一条 | L2「removing a folder keeps tracks and references…」「restoring a folder does not revive…」 | 已修（L2），见 D-20 |
 
 > **约束（原 B2）**：客户端 bundle 只在宿主启动时加载——这是**宿主约束**，已归入
 > [`ARCHITECTURE.md`](../ARCHITECTURE.md) §8 约束 2；B2 编号不再复用。
@@ -93,6 +101,7 @@
 | 进度条"乐观定位"（防回弹） | `b8dc624` | 需要录屏/慢放判读 |
 | 队列容器改用 `.dshm-list` | `b8dc624` | **已作废**：B1 的根因是渲染抛错，不是容器（见 §3 B1）；该改动本身无需再单独验收 |
 | 自适应窗口尺寸下的面板钳制 | 历代 | 只做过一次失败尝试（窗口最大化时 `SetWindowPos` 无效） |
+| 扫描/来源生命周期（C2 瘦身 Phase 1） | 工作区（未提交） | 只在隔离 `DSH_HOME` + 临时 SQLite 上验证；真实宿主需重启后人工验收（改名、移除来源、重新添加） |
 
 Phase 0B-2 新增的**部分验证**项：
 
@@ -131,8 +140,16 @@ Phase 0B-3（Bundle ID）的取证状态——2026-11-02 02:09 用户重启后�
 
 ## 6. 下一步（按顺序）
 
-0*. **扫描链路 C2（未开始，待裁定）**：`mergeTracks`（幸存 ID、事务、三张引用表迁移）+
-   root 重叠校验。C1（结局台账与单一收尾）已完成，见 §8 末尾。
+0*. **审核 C2 瘦身 Phase 1（本轮，工作区未提交）**：路径优先身份、`removeRoot` 保留行并置 `missing`、
+   目录不可读即报错、根重叠拒绝与只读报告；L2 49/49、L1 95/95、Smoke 21。**未跑 L3**。
+0.1 **Phase 2a 单曲重新定位（未实现）**：`{op:'track.relocate', id, path}`；事务内可整合已入库目标，
+   冲突则整体回退。API 与事务边界见 §8。
+0.2 **Phase 2b 整文件夹搬家（未实现）**：`{op:'roots.relocate', rootId, path}`，按原相对路径批量恢复，
+   匹配不上的保持 `missing`。
+0.3 **Phase 3 缺失项的 UI（未实现）**：缺失行低调呈现、`定位文件` 入口、冲突提示。
+0.4 **Player 解码失败上限（未实现）**：`mode=all` 队尾回绕时，连续解码失败的队列可能反复重试。
+0.5 **真实库的 L3（未做）**：需要一次"改文件夹 → 重扫 → 收藏仍在 → 移除来源 → 重新添加"的人工验收；
+   真实库仍是 v2，尚未在真实宿主上跑过本轮代码。
 0. **审核 C2**（本轮，未提交）：`engine.load` / `rewriteTail` 的确认语义 + Player 的采纳规则；
    L1 82 例、L2 26 例、Smoke 21 项通过。**本轮未跑 L3**（按新规约，真实宿主只做只读或经批准的人工验收）
 0b. ~~**B19**~~ 已修（本轮）：序列播完后 `resume()` 从队首 0:00 重新开始；正常暂停仍按位置恢复。待 L3
@@ -534,3 +551,64 @@ C1 未做（明确）：
   的探测字段；未改曲目集合、收藏、歌单、队列、播放状态。
 - 未覆盖：失败分支（真实库不能注入损坏文件）由 L2 的 `test/integration/scan.test.mjs` 覆盖；
   强杀恢复仍未验证。
+
+**C2 瘦身 Phase 1（工作区未提交，2026-11-07，基线 `94ece94`）**
+
+起点与保护：工作区先回到 `94ece94`；回退前的 C2 状态在仓库外有两份可验证副本
+（`%TEMP%\dsh-music-c2-backup-20261106-030247\`：`files/` 9 个文件逐字节 + `c2.patch` + 还原脚本，
+另有一个 `git stash create` 的游离提交 `610cf67`，与工作区 9 个文件逐字节一致）。代码的
+`SCHEMA_VERSION` 始终是 **2**（C2 的 v3 已撤销）；真实 `library.db` 的版本与兼容性验证见 §1 ——
+它在被否决的 C2 尝试期间被宿主升到 v3，本轮所有测试只在临时目录里跑，没有打开过它。
+
+保留（相对 C1 基线只加这些）
+- `db.findByPath(path)`：按路径找行，**包含** `removed_at` / `missing` 的行；`tracks.path` 唯一，
+  这是"这条路径是否已有行"的唯一安全答案。
+- worker 改为**路径优先**：`holder = findByPath(file)`；有行 → 用它的 id 与 `root_id`（后者仅在所属
+  根仍注册时保持，否则划归当前根）；无行 → `trackId(root.id, rel)`。缺失判定与 `removed_at` 判定都
+  写在这条判断里。
+- `walk()` 的 `readdir` 失败改为抛出（原来只记 warn 并跳过）。
+- `containsPath` / `overlapOf` / `roots()` 的 `overlapsWith` / `addRoot` 双向拒绝 / `scan()` 的重叠 warn。
+- `removeRoot` 改为"标记 `missing` → 删 `scan_runs` → 删 `roots`"，返回被标记的行数。
+
+删除（相对 C1 基线保持原样，且不再有）
+- 自动身份推断：`reconcileIdentity`、`groupByFingerprint`、指纹候选匹配、`relocateTrack`、
+  `resolveTrackId` / `allocateTrackId` / `fileGone`、`trackId` 的盐参数。
+- 只服务自动合并的事务机器：`transaction`、`referencesOf`、`absorbTrack`（阶段 2 需要时再从备份回收）。
+- schema v3 与 `scan_runs.conflicts`；`scan_runs` 仍只有 v2 的 `failed` 列。
+- 台账里的 `relocated` 计数（不再有生产者）。
+
+removeRoot 的数据库状态（每次都是同一组语句）
+| 表 | 之前 | 之后 |
+|---|---|---|
+| `roots` | 1 行 | **0 行** |
+| `scan_runs` | 该根 1 行 | **0 行** |
+| `tracks` | N 行，`missing` 按磁盘事实 | **N 行不变**，`missing = 1`、`path`/`id`/`added_at` 不变 |
+| `favorites` / `playlist_items` / `track_overrides` | 引用该根曲目 | **原样**（键是 id） |
+| `app_state.player` | 可能引用 | **原样**（播放时按 `usable()` 过滤，不留悬空 id） |
+
+三步写入在**一个短事务**里（`BEGIN IMMEDIATE` / `COMMIT` / 失败 `ROLLBACK`），
+失败时不留"根还在、曲目已标 missing"的半截状态（L2 用 `roots` DELETE 触发器注入失败验证）。
+扫描进行中移除同一 root 会被拒绝（`scanningRoots` 守卫，API 回 `ok:false`），
+避免未结束的遍历把已移除的来源写回。
+
+重新添加同一路径：`addRoot` 生成新的 rootId → 扫描对每个文件 `findByPath` 命中旧行 →
+`id` 与 `added_at` 不变，`root_id` 划到新根，`missing` 清零，收藏/歌单/覆盖/队列引用自动解析；
+仍不存在的文件保持 `missing`。重复移除 + 添加两轮后仍是 N 行、同一组 id（L2 覆盖）。
+
+扫描安全
+- 任一层目录 `readdir` 失败 → 该 run `error`，**不执行 sweep**，所有行的 `missing` 保持原值。
+- 历史重叠根：共享文件只入库一行；行的 `root_id` 只在所属根已注销时被改写，交替扫描不会来回转移
+  （L2 用"每轮 touch 文件"强制重写来验证）。
+
+验证（当次运行，工作区）
+- `npm test` **95/95**；`npm run test:l2` **51/51**；`npm run smoke` **21 项**；`git diff --check` exit 0
+- `node --test test/integration/scan.test.mjs` **21/21**（C1 8 例保留，其中 sweep 崩溃例改为注入
+  `setMissing` 失败；新增 13 例）
+- Red：根重叠 4 例、sweep 崩溃改写例、`cpSync` 缺失 1 轮；其余 7 个行为在实现先行的前提下用
+  **5 次临时变异**逐个证明断言会失败（回退 `walk` 的 warn、回退 `DELETE FROM tracks`、
+  去掉 `removed_at` 守卫、`rootId` 恒取当前根、去掉路径优先查找），每次变异只被对应用例抓住
+- 真实库仍为 v2，未被打开；临时目录全部删除
+
+未做（见 §6）
+- `track.relocate`、`roots.relocate`、缺失项的 UI 与"定位文件"、Player 解码失败上限
+- 未跑 L3；未改 `client.js` / `player.js` / `engine.js` / API 的 op 集合；未升级版本

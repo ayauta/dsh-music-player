@@ -7,7 +7,7 @@
 - **版本变化**看 [`CHANGELOG.md`](CHANGELOG.md)。
 - 本文件不再维护"已完成功能清单"——那种清单最容易过期。
 
-最后更新：2026-11-05（C1 队列稳定化：B12/B13/B14/B15/B16/B18 结案，B17 收进 mirror）
+最后更新：2026-11-07（扫描与来源生命周期收敛：B21 结案，新增 §三 18–22）
 
 ---
 
@@ -38,6 +38,7 @@
 | **B17** | 顺序被重建后自然 EOF 失步：`baseCursor` 没有随顺序重排重新锚定，`pos` 事件映射到错误曲目 | **已修（工作区，待重启 L3）**：锚定现在只写在 `mirror()` 里，没有第二个写者 | 播放中 `move` 后自然播完，音频已换曲而 `trackId`／迷你行停在旧曲 | L1「a reordered queue keeps the auto-advance mapping anchored」；L2 真实 mpv「B17: a natural EOF after an order change…」 | 已修，待 L3 |
 | **B19** | 顺序播放播到最后一首后按「播放」，会立刻再次结束 | **已修**：`handleEndOfTrack` 用 `positionMs = durationMs` 表达"已播完"，`resume()` 却把它当作重新加载的 seek 目标，且停在最后一首 | `resume()` 现在识别"播放头停在末尾且没有打开的文件"，从**队首 0:00** 重新开始；正常暂停仍从暂停位置恢复 | 修复前探针：`load([b], 0, 3000)`；修复后：`load([a, b], 0, 0)`。L1「playing again after a sequence queue ends…」、L2「10b. playing again after the queue ended rests…」 | 已修（L1 + L2），待 L3 |
 | **B20** | `player.pause()` 的返回快照可能仍是 `paused:false`，而 mpv 已经暂停 | **已修**：暂停确认下沉到 Engine 边界，命令被 ack 不再等同于状态已生效 | 写操作回包与 mpv 真实状态矛盾（隔离真实 mpv：20 次中 18 次）；Client 靠再 poll 一次掩盖 | 探针：修复前 18/20 陈旧，修复后 **0/20**；L2「F1: the pause op returns the state mpv has already confirmed」重复 10 轮 | 已修（L1 + L2），待 L3 |
+| **B21** | `roots.remove` 直接 `DELETE FROM tracks WHERE root_id = ?`：收藏 / 歌单 / 队列里留下无法解析的悬挂 id，重新添加同一路径会得到全新 id | **已修**：移除来源只删 `roots` 与 `scan_runs`，曲目行保留并置 `missing`；重新添加同一路径时按路径命中同一行，id 与引用原样恢复 | 删根后歌单静默少一条、收藏看不见；重新添加后关联全丢 | L2「removing a folder keeps tracks and references, re-adding restores the same ids」「restoring a folder does not revive a file that is still absent」；变异：恢复旧的 `DELETE FROM tracks` → 用例红 | 已修（L2），见 `docs/DECISIONS.md` D-20 |
 
 > **关于 B2**：早期把"客户端 bundle 只在宿主启动时加载"记作缺陷 B2；它其实是**宿主约束**
 > 而非本插件的缺陷，现已归入 [`ARCHITECTURE.md`](ARCHITECTURE.md) §8 约束 2。
@@ -88,6 +89,17 @@
     没有隐藏的原始顺序。手动「下一首播放」不会被后续洗牌覆盖。
 17. **队列编辑不会开始播放**：暂停保持暂停、停止保持停止；只有传输操作（播放 / 下一首 /
     上一首 / 点选）才会启动音频。「停止并清空队列」是唯一的破坏性队列操作。
+18. **改名或移动文件不会保留原曲目**：扫描不做任何指纹/元数据推断，改名后旧路径的行标 `missing`
+    （保留收藏、歌单、覆盖与队列引用），新路径作为新曲目入库。这是产品选择，不是缺陷
+    （[`docs/DECISIONS.md`](docs/DECISIONS.md) D-19）。手动重新定位尚未实现。
+19. **移除来源后曲目行仍留在库里**（`missing`、`root_id` 指向已删除的根）：这是"不删用户关联"的代价；
+    重新添加同一路径即可恢复，重复操作幂等。没有"清空某个来源的曲目"的独立操作。
+20. **跨 root 的移动不保留身份**：文件从一个扫描根移到另一个根时，旧行标 `missing`、新行是新 id。
+    扫描按 root 顺序进行，且不做跨根匹配。
+21. **重叠根检测只比较路径字符串**（`win32.resolve` + `win32.relative`），不解析符号链接 / junction；
+    一个 junction 指向另一个根时不算重叠。历史重叠只报告、不自动清理。
+22. **只有目录读取失败会立刻中止**：任一层 `readdir` 失败都会让该 run 以 `error` 结束且不执行 sweep，
+    但"目录可读、单个文件 `stat` 失败"仍按文件计入 `failed`，不会把已有行标 missing。
 
 ---
 

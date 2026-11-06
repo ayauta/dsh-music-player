@@ -5,7 +5,7 @@
 
 > 规范看 `docs/DESIGN.md`；规则看 `AGENTS.md`。本文件不放产品决策。
 
-最后更新：2026-11-02（Phase 0B-2；验证对象为未提交工作区）
+最后更新：2026-11-07（C2 瘦身 Phase 1；验证对象为未提交工作区）
 
 ---
 
@@ -39,7 +39,7 @@
 | `test/player-eof-persist.test.mjs` | L1 | ✅ 安全 | 无 | 四态 EOF、解码错误、`dispose → init` 往返、异常存档降级（10 例，全回归） |
 | `test/support/player-harness.mjs` | L1 支撑 | ✅ 安全 | 无 | 假 engine（记录命令 + 可回推事件）、假 db（Map）、`delay: () => Promise.resolve()` |
 | `test/integration/queue-api.test.mjs` | L2 | ✅ 隔离无声 | **无声**（`--ao=null`）、仅临时根 | `queue.list ↔ snapshot` 顺序与元数据一致、写操作回包一致性（7 回归）+ B14 真实 mpv 复现（1 诊断） |
-| `test/integration/scan.test.mjs` | L2 | ✅ 隔离无声 | 仅临时根；真实 `node:sqlite`；**stub ffprobe**（不启动 mpv、不需要 ffmpeg） | 扫描结局守恒与生命周期（8 例，含"探测失败不动既有行/收藏/歌单"）：单根守恒、探测失败 → `partial`、写入失败不计入 unchanged、每根独立、全失败 → `error`、sweep 崩溃 → `error` 且索引=已提交状态、重扫覆盖、v1 schema 升级与幂等 |
+| `test/integration/scan.test.mjs` | L2 | ✅ 隔离无声 | 仅临时根；真实 `node:sqlite`；**stub ffprobe**（不启动 mpv、不需要 ffmpeg）；故障注入是 `upsertTrack` / `setMissing` 的包装、`roots` DELETE 触发器与可延迟的探针桩 | 扫描结局守恒与生命周期（C1，8 例）+ 身份与来源生命周期（13 例）：单根守恒、探测失败 → `partial`、写入失败不计入 unchanged、每根独立、全失败 → `error`、sweep 写入失败 → `error` 且索引=已提交状态、重扫覆盖、v1→v2 升级与幂等；同路径重扫 id/收藏/歌单不变、相同内容两条路径两首曲目、改名＝新曲目+旧行 missing、移除来源保留行与引用且重新添加恢复同 id（幂等两轮）、移除来源全有或全无（中途失败回滚）、扫描进行中拒绝移除、仍缺失的文件不被复活、移出曲库的曲目不被重扫复活、目录不可读 → `error` 且全员不标 missing、父子根拒绝/同前缀接受/历史重叠一个文件一行且 `root_id` 不来回转移 |
 | `scripts/bundle-id.mjs` | — | ✅ **只读**（仅 `--write` 写文件） | 默认不联网、不写；`--write` 只改标记行；`--served` 只发回环 GET | Bundle ID 校验、`--served` 宿主字节比对、`--runtime` 运行时比对（见 §2.2） |
 | `test/bundle-id.test.mjs` | L1 | ✅ 安全 | 临时目录（`mkdtemp`） | 指纹一致性 / 标记唯一性 / 换行归一 / `--write` 幂等 / 缺标记与重复标记拒绝 / 运行时值比对（9 例） |
 | `test/client-source.test.mjs` | L1 | ✅ 安全 | 只读 `client.js` | **静态守卫**（无 DOM 渲染器）：`Cover` 不得解引用可为 null 的 `track`；`ErrorBoundary` 必须同时支持 `fallback` 与 `makeFallback`，且所有调用点使用其中之一。3 例 |
@@ -389,6 +389,18 @@ npm run smoke -- --library <path> --allow-real-library   # 只读诊断，需显
 | 2026-11-06 | Automated（**只读复核**） | 工作区（扫描台账 C1，未提交）+ 运行中实例（端口 60438） | L3 | 对同一 root、同一次 run 三方对照：`scan_runs` 行、`library.scanStatus`、该时间窗内的进度日志 | **Passed（澄清报告笔误）**：三处一致为 `total 20 / scanned 20 / skipped 19 / failed 0`，守恒 `20 = 19 未变化 + 1 更新 + 0 失败`；日志里的 `scanned:19` 是 **19/20 时的中途快照**，`phase:'done'` 才是 20。上一轮汇总表把 `skipped` 填进了 `scanned` 列 | Agent | 只读：未触发扫描、未写库；证明差异来自报告口径，而非代码或持久化 |
 | 2026-11-06 | Automated | 工作区（扫描台账 C1，未提交） | L2 | `node --test test/integration/scan.test.mjs`（新增 1 例） | **Passed**：8/8 / 0.43s；新增「a probe failure leaves the existing row, its favorite and its playlist entry alone」：已有行 + 文件 mtime 变化 + 探测失败 → `partial` / `failed=1` / `skipped=2`，旧行**不置 missing**、无重复行、收藏与歌单引用不变；恢复正常探测后重扫 `done` / `failed=0`，行内 mtime 更新为新值 | 脚本 | 覆盖"探测失败不得把既有行变成 missing"这条安全边界；**不覆盖**真实 ffprobe 时序 |
 | 2026-11-06 | Automated（**临时变异，已还原**） | 工作区（扫描台账 C1，未提交） | L2 | 在探测失败分支临时插入 `db.setMissing([id], true)` → 跑 `--test-name-pattern "leaves the existing row"` | **Red（预期）**：失败于「a failed probe is not a missing file」（`true !== false`）；还原后重跑 1/1 通过 | Agent | 证明该守卫不是恒真断言；变异只存在于工作区数秒，未入库 |
+| 2026-11-07 | Automated | 工作区（Phase 1，基线 `94ece94`；实现前） | L2 | `node --test test/integration/scan.test.mjs`（新增 4 例根重叠） | **Failed（预期）**：`Missing expected exception`——`addRoot` 不拒绝父子目录，`roots()` 也不报告重叠 | 脚本 | 证明重叠断言能抓住缺失的校验 |
+| 2026-11-07 | Automated | 工作区（Phase 1，实现中） | L2 | 同文件（C1 的 sweep 崩溃例） | **Failed（预期，随后改写）**：`'done' !== 'error'`——自动 relocate 删除后，改名不再让 sweep 崩溃，该用例改为注入 `setMissing` 失败 | 脚本 | 用例改写的是注入点，C1 的四条承诺（不留在 `running`、`error`、首条原因、索引=已提交）一条没减 |
+| 2026-11-07 | Automated | 工作区（Phase 1，未提交） | L2 | `node --test test/integration/scan.test.mjs` | **Passed**：19/19 / 0.6s | 脚本 | C1 8 例（含改写后的 sweep 例）+ 11 例身份/来源/安全；**不覆盖**真实库、真实 ffprobe 时序、L3 |
+| 2026-11-07 | Automated（**临时变异，均已还原**） | 工作区（Phase 1，未提交） | L2 | 5 次变异：`walk` 回退成 warn+continue / `removeRoot` 回退成 `DELETE FROM tracks` / 去掉 `removed_at` 守卫 / `rootId` 恒取当前根 / 去掉 `findByPath` 路径优先 | **全部 Red（预期）**，各自只被对应用例抓住：`an unreadable folder…` / `removing a folder keeps tracks…` / `a track removed from the library…` / `historical overlapping roots… do not steal ownership`（第二轮） / `removing a folder…`（id 恢复） | Agent | 证明这些断言不是恒真守卫 |
+| 2026-11-07 | Automated | 工作区（Phase 1，未提交） | L1 | `npm test` | **Passed**：95 tests / 0 fail | 脚本 | 未改播放代码，播放/队列断言为回归确认 |
+| 2026-11-07 | Automated | 工作区（Phase 1，未提交） | L2 | `npm run test:l2`（隔离 `DSH_HOME` + `--ao=null`） | **Passed**：49 tests / 0 fail；临时根已删除 | 脚本 | 38 例既有 + 11 例新增；**不覆盖**真实音频输出 |
+| 2026-11-07 | Automated | 工作区（Phase 1，未提交） | L2 | `npm run smoke`（夹具模式） | **Passed**：21 checks / 0 fail；`temp root removed` | 脚本 | 仅回归确认 |
+| 2026-11-07 | Automated | 工作区（Phase 1 收尾，实现前） | L2 | `node --test test/integration/scan.test.mjs`（新增 2 例） | **Failed（预期）**：`its ledger row is still there`（`0 !== 1`，三步写入已部分提交）与 `Missing expected exception`（扫描进行中移除不被拒绝） | 脚本 | 证明原子性与并发守卫两条断言都不是恒真 |
+| 2026-11-07 | Automated（**临时变异，均已还原**） | 工作区（Phase 1 收尾） | L2 | 2 次变异：去掉 `BEGIN IMMEDIATE` / 去掉 `scanningRoots` 守卫 | **各自 Red**：`removing a folder is all-or-nothing` / `a folder cannot be removed while its scan is running` | Agent | 与另外 5 次变异合计 7 次，覆盖本轮全部新增守卫 |
+| 2026-11-07 | Automated | 工作区（Phase 1 收尾，未提交） | L2 | `node --test test/integration/scan.test.mjs` | **Passed**：21/21 | 脚本 | 含原子性与并发两例 |
+| 2026-11-07 | Automated | 工作区（Phase 1 收尾，未提交） | L2 | `npm run test:l2`（隔离 `DSH_HOME` + `--ao=null`） | **Passed**：51 tests / 0 fail；临时根已删除 | 脚本 | 38 例既有 + 13 例新增 |
+| 2026-11-07 | Automated（**真实库的隔离副本**，只读真实文件） | 工作区（Phase 1 收尾） | — | 复制 `library.db` + `-wal` + `-shm` 到临时目录 → 读 `user_version` 与 `scan_runs` 列 → 用 v2 代码打开、写一条 run、读回、核对 85 行 id | **Passed（向前兼容）**：真实库是 **v3**（多出 `conflicts` 列，来自被否决的 C2 构建）；v2 代码读出 **85 行、id 全同**，run 可读写，`user_version` **保持 3 不降级**；副本已删除 | Agent | 证明 v2 代码能安全读写 v3 文件；**真实文件未被打开**（mtime 未变）。是否把真实库降回 v2 由用户决定 |
 
 **关于最后一条的说明**：
 
