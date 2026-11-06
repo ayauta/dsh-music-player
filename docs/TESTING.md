@@ -401,8 +401,10 @@ npm run smoke -- --library <path> --allow-real-library   # 只读诊断，需显
 | 2026-11-07 | Automated | 工作区（Phase 1 收尾，未提交） | L2 | `node --test test/integration/scan.test.mjs` | **Passed**：21/21 | 脚本 | 含原子性与并发两例 |
 | 2026-11-07 | Automated | 工作区（Phase 1 收尾，未提交） | L2 | `npm run test:l2`（隔离 `DSH_HOME` + `--ao=null`） | **Passed**：51 tests / 0 fail；临时根已删除 | 脚本 | 38 例既有 + 13 例新增 |
 | 2026-11-07 | Automated（**真实库的隔离副本**，只读真实文件） | 工作区（Phase 1 收尾） | — | 复制 `library.db` + `-wal` + `-shm` 到临时目录 → 读 `user_version` 与 `scan_runs` 列 → 用 v2 代码打开、写一条 run、读回、核对 85 行 id | **Passed（向前兼容）**：真实库是 **v3**（多出 `conflicts` 列，来自被否决的 C2 构建）；v2 代码读出 **85 行、id 全同**，run 可读写，`user_version` **保持 3 不降级**；副本已删除 | Agent | 证明 v2 代码能安全读写 v3 文件；**真实文件未被打开**（mtime 未变）。是否把真实库降回 v2 由用户决定 |
+| 2026-11-07 | **Manual** | `59a1e9b`（真实 Desktop，host release `0.2.2-rc.1 / c59d10a`，端口 50811） | L3 | 用户启用插件后手动点播、播放 / 暂停 / 切歌；Agent 只读读取 `status` / `diag.logs` 并截图 | **Passed（仅限下列范围）**：库 85 首、4 个来源；数据库 v2、`integrity_check = ok`；启动未触发扫描或升级；6 首 shuffle 队列与设置恢复；mpv 加载 `…09.《破碎时间》…24bits.48khz.wav`，`ao=wasapi`、`exclusive=false`，解码 `s32/48k/2ch`、设备 `float/48k/2ch`；`playing=true`、位置正常推进、`lastError=null`；用户点播触发 `queue.play` → 7 首 `sequence` 取代 6 首 `shuffle`（**预期行为，不是异常**） | 用户（试听）+ Agent（只读） | 覆盖：读取、点播、WASAPI 共享输出与状态同步。**不覆盖**：音乐库与队列页面的完整交互、UI 进度与控制状态的逐项核对、DOM Bundle ID、缺失曲目界面与重新定位（未实现）、扫描失败状态的 UI（未实现）。**副作用**：试听期间 `app_state` 按设计被写入（位置 / 队列 / 模式），数据库以 WAL 打开 |
+| 2026-11-07 | Automated（**只读**） | `59a1e9b`（端口 50811） | L3 | `POST /music/api` 的 `status` / `library.scanStatus` / `roots.list` / `queue.list` / `player.state` / `diag.logs`；复制 `library.db` + `-wal` + `-shm` 读 `user_version` / `integrity_check` / `table_info`；`bundle-id --served`；`capture-window.ps1` 截图 | **Passed（只读取证）**：`user_version 2`、`scan_runs` 无 `conflicts`、4 条 run 的 `startedAt` 未变（未自动扫描）、`trackId 4b5f76…` / shuffle / 73 与迁移前备份一致、served 字节 = 工作区 `client.js`（`dshm-3c68b1072173`）、`diag.logs` 1 条 0 warn/error | Agent | 不构成人工验收，不能证明渲染细节或出声质量。截图 `C:\Users\andy\AppData\Local\Temp\dshm-l3\live.png` 只覆盖迷你行与侧栏入口 |
 
-**关于最后一条的说明**：
+**关于 2026-10-29 那条 L3 记录（`scripts/playback-test.mjs`）的说明**：
 
 - 该脚本直接打运行中的插件，**副作用**：覆盖真实队列、`prefs.set` 改真实设置、改变当前播放、结束后不恢复（见 §4）。
 - 该次运行**未记录 HEAD**，无法精确对应 commit；结论**不代表当前版本通过**。

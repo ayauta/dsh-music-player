@@ -12,13 +12,13 @@
 | 项 | 值 |
 |---|---|
 | 分支 | `master`（无其它分支） |
-| 最近验证基线 | **C2 瘦身 Phase 1（工作区未提交，基线 `94ece94`）**：L1 95/95、L2 51/51、Smoke 21 项、`git diff --check` 干净；见 §8 末尾。上一条已提交基线：扫描台账 C1 `f0ad2e0`（L1 95/95、L2 38/38、Smoke 21）。更早：Phase 0B-2 基线 `208023c`（player 注入）、`34defc6`（L1）、`38f4faa`（L2） |
+| 最近验证基线 | **L3（Manual，`59a1e9b`）**：真实 Desktop 试听通过，范围与缺口见 `docs/TESTING.md` §8 最后两行；同基线提交前的 L1 95/95、L2 51/51、Smoke 21、`git diff --check` 干净。上一条已提交基线：扫描台账 C1 `f0ad2e0`（L1 95/95、L2 38/38、Smoke 21）。更早：Phase 0B-2 基线 `208023c`（player 注入）、`34defc6`（L1）、`38f4faa`（L2） |
 | 更早的已提交基线 | `18e8cf5`（Phase 0B-1）→ `16bcd45`（Phase 0A） |
 | 当前 HEAD | 以 `git log -1` 为准；本轮最后一个是本文件所在的**文档提交**（不改变代码） |
 | 版本 | `package.json` → `1.7.0`（本轮未变） |
 | 标签 | **无**。计划中的 `baseline-v1.7.0` **必须指向 `b8dc624`**；打标签是单独的 Git 操作，尚未执行 |
-| 工作区 | **clean**（两个提交：`cdd60aa` 代码/测试 + 文档提交）：`lib/host/db.js`、`lib/host/library.js`、`test/integration/scan.test.mjs`、`ARCHITECTURE.md`、`LIMITATIONS.md`、`docs/DECISIONS.md`（D-19 / D-20）、`docs/DESIGN.md`（R14）、`docs/TESTING.md`、本文件 |
-| 数据库 schema | 代码 **v2**（`SCHEMA_VERSION = 2`，代码从不写 `conflicts`）。**真实 `library.db` 目前是 v3**：2026-11-06 02:33 被已否决的 C2 构建（当时 `SCHEMA_VERSION = 3`）在宿主里升级过，多出 `scan_runs.conflicts`（默认 0）。已用**隔离副本**验证 v2 代码可读写该文件：85 行 id 不变、run 可读写、`user_version` 保持 3（不降级、不报错）。本轮与上一轮的全部测试都没有打开过真实文件 |
+| 工作区 | **clean**（`59a1e9b` = `cdd60aa` 代码/测试 + 文档提交；本轮只加文档） |
+| 数据库 schema | 代码与真实库都是 **v2**：`SCHEMA_VERSION = 2`，`scan_runs` 只有 `failed` 列。真实 `library.db` 在 2026-11-07 做过一次规范化（删掉被否决的 C2 构建留下的 `scan_runs.conflicts`、`user_version 3→2`），逐表行级比对无数据变化，`integrity_check = ok`；此后宿主启动与试听都没有再触发升级或加列。迁移前备份见 `plugin-data/dsh-music/backups/library-pre-v2-normalize-20261107-022910.db` |
 
 已提交的治理与测试基线：
 
@@ -80,7 +80,7 @@
 | **B16** | 队列高亮行与实际播放曲目不一致（`cursor` 是 `plays` 的下标，被当成 `queue` 的下标） | **已修** | `cursor` 与可见队列同数组，客户端按 id 定位 | `LIMITATIONS.md` §一 B16 · 静态守卫 | 已修 |
 | **B18** | 「清空待播放」同样用 `cursor + 1` 切队列，会删错条目（最坏删掉正在播的） | **已退役**（按决策 4 删除该功能） | 按钮改为「停止并清空队列」（`queue.clear`） | `LIMITATIONS.md` §一 B18 · 静态守卫 | 已退役 |
 | **B17** | 顺序被重建后自然 EOF 状态失步：`baseCursor` 未随顺序重排重新锚定，`pos` 事件映射到错误曲目 | **已修（工作区，待重启 L3）**：锚定现在只写在 `mirror()` 里 | 音频已切到下一首，迷你行与队列仍显示上一首 | L1「a reordered queue keeps the auto-advance mapping anchored」；L2 真实 mpv「B17: a natural EOF after an order change…」 | 已修，待 L3 |
-| **扫描-C2** | 重命名识别不可用：`relocateTrack` 把旧行改写成候选行已占用的 `tracks.path`，必然撞唯一约束；扫描根重叠时文件被逐条丢弃 | **Implementation Gap（已收敛为产品契约）** | 改名后旧行残留、收藏/歌单仍指向旧 id | 修复前 `UNIQUE constraint failed: tracks.path` | **已定稿**：自动指纹合并被否决并删除；路径只用于自动识别已有记录，`trackId` 是持久身份；扫描不依据指纹推断文件移动（D-19）。改名＝新曲目 + 旧行 `missing`；根重叠在注册处拒绝、历史重叠只报告。L2 21 例 + 7 次变异核对 |
+| **扫描-C2** | 重命名识别不可用：`relocateTrack` 把旧行改写成候选行已占用的 `tracks.path`，必然撞唯一约束；扫描根重叠时文件被逐条丢弃 | **Implementation Gap（已收敛为产品契约，阶段已结项）** | 改名后旧行残留、收藏/歌单仍指向旧 id | 修复前 `UNIQUE constraint failed: tracks.path` | **已定稿**：自动指纹合并被否决并删除；路径只用于自动识别已有记录，`trackId` 是持久身份；扫描不依据指纹推断文件移动（D-19）。改名＝新曲目 + 旧行 `missing`；根重叠在注册处拒绝、历史重叠只报告。L2 21 例 + 7 次变异核对。**L3（`59a1e9b`）**：真实库 v2、85 首/4 根、队列与设置恢复、播放链路通过；改名 / 移除来源 / 重新添加属破坏性操作，**未在真实库上执行**（见 §4） |
 | **扫描-C2a** | 跨 root 的移动不保留身份：旧行 `missing`、新行是新 id | **已知限制（产品选择）**：扫描按 root 顺序进行，不做跨根匹配 | 用户把专辑移进另一个根后，收藏仍挂在旧行 | L2 未覆盖（不存在的路径不猜） | 登记（`LIMITATIONS.md` §三 20）；是否支持待裁定 |
 | **B21** | `roots.remove` 删除了 tracks，收藏/歌单留下悬挂 id，重新添加路径得到全新 id | **已修**：移除来源只删 `roots` 与 `scan_runs`，曲目行保留并置 `missing`；重新添加同一路径恢复原 id 与引用 | 删根后歌单静默少一条 | L2「removing a folder keeps tracks and references…」「restoring a folder does not revive…」 | 已修（L2），见 D-20 |
 
@@ -101,7 +101,7 @@
 | 进度条"乐观定位"（防回弹） | `b8dc624` | 需要录屏/慢放判读 |
 | 队列容器改用 `.dshm-list` | `b8dc624` | **已作废**：B1 的根因是渲染抛错，不是容器（见 §3 B1）；该改动本身无需再单独验收 |
 | 自适应窗口尺寸下的面板钳制 | 历代 | 只做过一次失败尝试（窗口最大化时 `SetWindowPos` 无效） |
-| 扫描/来源生命周期（C2 瘦身 Phase 1） | 工作区（未提交） | 只在隔离 `DSH_HOME` + 临时 SQLite 上验证；真实宿主需重启后人工验收（改名、移除来源、重新添加） |
+| 扫描/来源生命周期的**破坏性分支**（改名、移除来源、重新添加、缺失后恢复） | `cdd60aa` | 真实宿主只做了只读核对与试听（L3，`59a1e9b`）：v2 未升级、85 首/4 根、6 首队列与设置恢复。改名 / 移除来源 / 重新添加会改动真实库，按纪律未执行，仍只有隔离 L2 覆盖 |
 
 Phase 0B-2 新增的**部分验证**项：
 
@@ -140,15 +140,14 @@ Phase 0B-3（Bundle ID）的取证状态——2026-11-02 02:09 用户重启后�
 
 ## 6. 下一步（按顺序）
 
-0*. **审核 C2 瘦身 Phase 1（本轮，工作区未提交）**：路径优先身份、`removeRoot` 保留行并置 `missing`、
-   目录不可读即报错、根重叠拒绝与只读报告；L2 49/49、L1 95/95、Smoke 21。**未跑 L3**。
+0*. ~~**C2 瘦身 Phase 1**~~ **已完成并结项**（`cdd60aa` 代码/测试 + `59a1e9b` 文档；L1 95/95、L2 51/51、Smoke 21，L3 见 §8 末尾）
 0.1 **Phase 2a 单曲重新定位（未实现）**：`{op:'track.relocate', id, path}`；事务内可整合已入库目标，
    冲突则整体回退。API 与事务边界见 §8。
 0.2 **Phase 2b 整文件夹搬家（未实现）**：`{op:'roots.relocate', rootId, path}`，按原相对路径批量恢复，
    匹配不上的保持 `missing`。
 0.3 **Phase 3 缺失项的 UI（未实现）**：缺失行低调呈现、`定位文件` 入口、冲突提示。
 0.4 **Player 解码失败上限（未实现）**：`mode=all` 队尾回绕时，连续解码失败的队列可能反复重试。
-0.5 **真实库的 L3（未做）**：需要一次"改文件夹 → 重扫 → 收藏仍在 → 移除来源 → 重新添加"的人工验收；
+0.5 ~~**真实库的 L3**~~ **已完成**（Manual，`59a1e9b`）：见 §8 末尾与 `docs/TESTING.md` §8。仍缺的 UI 交互项见 0.3 与 §4
    真实库仍是 v2，尚未在真实宿主上跑过本轮代码。
 0. **审核 C2**（本轮，未提交）：`engine.load` / `rewriteTail` 的确认语义 + Player 的采纳规则；
    L1 82 例、L2 26 例、Smoke 21 项通过。**本轮未跑 L3**（按新规约，真实宿主只做只读或经批准的人工验收）
@@ -612,3 +611,24 @@ removeRoot 的数据库状态（每次都是同一组语句）
 未做（见 §6）
 - `track.relocate`、`roots.relocate`、缺失项的 UI 与"定位文件"、Player 解码失败上限
 - 未跑 L3；未改 `client.js` / `player.js` / `engine.js` / API 的 op 集合；未升级版本
+
+**L3 验收：真实 Desktop（Manual，2026-11-07，`59a1e9b`）**
+
+由用户手动试听，Agent 同时只读取证（`status` / `library.scanStatus` / `roots.list` / `queue.list` /
+`player.state` / `diag.logs` / 数据库副本 / `bundle-id --served`）。插件此前是 `enabled: false`，
+本轮通过插件管理器正常启用（`changed: true, application: applied`），未改任何代码。
+
+- **数据库**：`user_version = 2`、`integrity_check = ok`、`scan_runs` 无 `conflicts` 列（宿主启动没有把 v3 加回来）
+- **曲库**：85 首、0 条 missing；4 个来源路径正确、`overlapsWith` 全为空；27 张专辑、曲目合计 85
+- **未自动扫描**：4 条 run 的 `startedAt` 仍是 2026-11-06 那次，`roots.lastScanAt` 未变，计数 `41/41/41`、`12/12/12`、`12/12/12`、`20/20/19`
+- **恢复**：6 首 shuffle 队列、`trackId 4b5f76a545e022b05db8`、Volume 73、Muted false —— 与迁移前备份逐项一致
+- **播放**：`09.《破碎时间》…24bits.48khz.wav`，`ao=wasapi`（`exclusive=false`），`pcm_s24le` → 解码 `s32/48k/2ch` → 设备 `float/48k/2ch`，`playing=true`、位置正常推进、`lastError=null`，`diag.logs` 仅 1 条 mpv 启动、0 warn/error
+- **客户端**：`bundle-id --served` 显示的字节与工作区 `client.js` 完全一致（`dshm-3c68b1072173`，129 615 B）
+- **用户点播**：走 `queue.play`，7 首 `sequence` 队列取代原先 6 首 `shuffle` 队列 —— 预期产品行为，不是异常，也不是数据丢失
+- **副作用**：试听期间应用按设计写 `app_state`（播放位置、队列、模式，1.5 s 去抖），数据库文件被正常打开（`-wal`/`-shm` 重建）
+
+**未覆盖**（不得读成通过）：音乐库与队列页面的完整交互、UI 进度与控制状态的逐项人工核对、
+客户端运行时 DOM Bundle ID（无 F12 通道）、缺失曲目界面与重新定位（未实现）、扫描失败状态的 UI 呈现（未实现）。
+
+数据库可靠性阶段至此结项：结构（v2）、身份与引用、来源生命周期、扫描安全都已有 L2 + L3 记录；
+后续工作只剩用户触发的重新定位与 UI/UX（§6 的 0.1–0.3）。
