@@ -145,16 +145,32 @@ test('the transport row stays three keys and mode lives in the header (DESIGN §
   assert.ok(!header.includes('dshm-pop-title'), 'the visible panel title is gone; aria-label carries the name')
 })
 
-test('MiniPlayer keeps every hook above its empty-state return (React #310)', () => {
+test('no component calls a hook after an early return (React #310)', () => {
   const source = readFileSync(clientPath, 'utf8')
-  const start = source.indexOf('function MiniPlayer(')
-  const next = source.indexOf('\n    function ', start + 1)
-  assert.ok(start > 0 && next > start, 'MiniPlayer moved; update this guard')
-  const body = source.slice(start, next)
-  const early = body.indexOf('if (track === null)')
-  assert.ok(early > 0, 'the empty-state early return moved; update this guard')
-  const hooks = [...body.matchAll(/\buse(?:State|Effect|Ref|Callback|SyncExternalStore)\(/g)].map((m) => m.index)
-  const late = hooks.filter((at) => at > early)
-  assert.deepEqual(late, [], 'a hook sits after the early return: a track arriving would add hooks mid-lifecycle (#310)')
+  const starts = [...source.matchAll(/\n {4}function (\w+)\(/g)]
+  const offenders = []
+  for (let i = 0; i < starts.length; i += 1) {
+    const start = starts[i].index
+    const next = i + 1 < starts.length ? starts[i + 1].index : source.length
+    const lines = source.slice(start, next).split('\n')
+    // An early return is either a bare six-space return, or any return inside a
+    // six-space `if (...) { ... }` block. Returns in nested callbacks are deeper.
+    let early = -1
+    for (let j = 0; j < lines.length; j += 1) {
+      if (/^ {6}return\b/.test(lines[j])) { early = j; break }
+      if (/^ {6}if \(/.test(lines[j])) {
+        let k = j + 1
+        let hasReturn = false
+        for (; k < lines.length; k += 1) {
+          if (/^ {6}\}/.test(lines[k])) break
+          if (/^ {8,}return\b/.test(lines[k])) hasReturn = true
+        }
+        if (hasReturn) { early = k; break }
+      }
+    }
+    if (early < 0) continue
+    const late = lines.slice(early + 1).some((line) => /^ {6}.*\buse[A-Z]\w*\(/.test(line))
+    if (late) offenders.push(starts[i][1])
+  }
+  assert.deepEqual(offenders, [], 'hooks after an early return change the hook count mid-lifecycle (#310): ' + offenders.join(', '))
 })
-
