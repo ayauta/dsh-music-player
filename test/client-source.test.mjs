@@ -123,3 +123,38 @@ test('the queue view never asks the library for a track list (B15)', () => {
   assert.ok(branch.slice(0, 400).includes('setTracks([])'),
     'the queue view must not keep a library list around, otherwise playFrom would use it')
 })
+test('the mode button is a utility, not a prominent button (DESIGN §7.1)', () => {
+  const source = readFileSync(clientPath, 'utf8')
+  const start = source.indexOf('function ModeButton(')
+  const next = source.indexOf('\n    function ', start + 1)
+  assert.ok(start > 0 && next > start, 'ModeButton moved; update this guard')
+  const mode = source.slice(start, next)
+  assert.ok(!mode.includes('data-active'), 'a filled background is HIG prominent-button styling; mode is a utility toggle')
+})
+
+test('the transport row stays three keys and mode lives in the header (DESIGN §7)', () => {
+  const source = readFileSync(clientPath, 'utf8')
+  const transport = sliceBetween(source, "className: 'dshm-pop-transport'", "className: 'dshm-pop-volume'")
+  assert.equal((transport.match(/h\(IconButton/g) || []).length, 3, 'transport must be prev / play / next')
+  assert.ok(!transport.includes('ModeButton'), 'mode is a setting, not a transport action')
+  assert.ok(!transport.includes("size: 'xl'"), 'one size for the whole transport row; hierarchy comes from the glyph (HIG: style, not size)')
+  assert.equal((transport.match(/size: 'lg'/g) ?? []).length, 3, 'all three transport keys share the same 44px box')
+  assert.ok(!/\.dshm-pop-transport \.dshm-ib[^{]*:hover[^{]*\{[^}]*background:\s*transparent/.test(source), 'desktop icon buttons keep a hover plate (HIG Toolbars)')
+  const header = sliceBetween(source, "className: 'dshm-pop-head'", "className: 'dshm-pop-body'")
+  assert.ok(header.includes('ModeButton'), 'the header must own the four-state mode control')
+  assert.ok(!header.includes('dshm-pop-title'), 'the visible panel title is gone; aria-label carries the name')
+})
+
+test('MiniPlayer keeps every hook above its empty-state return (React #310)', () => {
+  const source = readFileSync(clientPath, 'utf8')
+  const start = source.indexOf('function MiniPlayer(')
+  const next = source.indexOf('\n    function ', start + 1)
+  assert.ok(start > 0 && next > start, 'MiniPlayer moved; update this guard')
+  const body = source.slice(start, next)
+  const early = body.indexOf('if (track === null)')
+  assert.ok(early > 0, 'the empty-state early return moved; update this guard')
+  const hooks = [...body.matchAll(/\buse(?:State|Effect|Ref|Callback|SyncExternalStore)\(/g)].map((m) => m.index)
+  const late = hooks.filter((at) => at > early)
+  assert.deepEqual(late, [], 'a hook sits after the early return: a track arriving would add hooks mid-lifecycle (#310)')
+})
+

@@ -23,7 +23,8 @@ window.__ModuleLoader__.load({
     // `node scripts/bundle-id.mjs --write`; `npm test` fails while it is stale.
     // Module scope on purpose: bundles are concatenated into one classic script,
     // where a top-level `const` would collide with another module's.
-    const BUNDLE_ID = 'dshm-3c68b1072173' // dsh-music-bundle-id
+    const BUNDLE_ID = 'dshm-c517ae41e53e' // dsh-music-bundle-id
+const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by motion-source test)
 
     const React = require('react')
     const { useState, useEffect, useRef, useCallback, useSyncExternalStore } = React
@@ -383,7 +384,9 @@ window.__ModuleLoader__.load({
   --dshm-fs-display: 21px; --dshm-fs-title: 13.5px; --dshm-fs-row: 13px; --dshm-fs-body: 13px;
   --dshm-fs-sub: 12px; --dshm-fs-caption: 11px; --dshm-fs-num: 12px;
   --dshm-r-card: 10px; --dshm-r-sheet: 18px;
-  --dshm-ease: cubic-bezier(.32,.72,0,1);
+  --dshm-ease-out: cubic-bezier(.23,1,.32,1); --dshm-ease-in-out: cubic-bezier(.77,0,.175,1);
+  --dshm-dur-press: 160ms; --dshm-dur-press-in: 110ms; --dshm-dur-hover: 130ms;
+  --dshm-dur-pop-in: 200ms; --dshm-dur-pop-out: 160ms;
   font-family: var(--dshm-font);
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
@@ -401,23 +404,21 @@ window.__ModuleLoader__.load({
 /* controls */
 .dshm-ib { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 8px;
   border: 0; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; flex: none;
-  transition: background 130ms var(--dshm-ease), color 130ms var(--dshm-ease), transform 90ms var(--dshm-ease); }
+  transition: background-color var(--dshm-dur-hover) ease, color var(--dshm-dur-hover) ease,
+    transform var(--dshm-dur-press) var(--dshm-ease-out); }
 .dshm-ib:hover { color: var(--dsw-alias-label-primary);
   background: color-mix(in srgb, var(--dsw-alias-label-primary) 8%, transparent); }
-.dshm-ib:active { transform: scale(.94); }
+.dshm-ib:active { transform: scale(.94); transition-duration: var(--dshm-dur-press-in); }
 .dshm-ib[data-active="true"] { color: var(--dsw-alias-brand-primary);
   background: color-mix(in srgb, var(--dsw-alias-brand-primary) 13%, transparent); }
-.dshm-ib[data-size="lg"] { width: 40px; height: 40px; border-radius: 11px; }
-.dshm-ib[data-size="xl"] { width: 52px; height: 52px; border-radius: 50%; color: var(--dsw-alias-label-primary); }
-.dshm-ib[data-size="xl"]:hover { background: color-mix(in srgb, var(--dsw-alias-label-primary) 9%, transparent); }
-.dshm-ib[data-size="xl"]:active { transform: scale(.96); }
+.dshm-ib[data-size="lg"] { width: 44px; height: 44px; border-radius: 12px; }
 .dshm-ib:disabled { opacity: .35; cursor: default; }
 .dshm-ib:focus-visible, .dshm-focusable:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
 /* Press: a brief, small scale plus a tint — never a bounce. */
-.dshm-btn, .dshm-disclose, .dshm-nav, .dshm-card { transition: background 130ms var(--dshm-ease),
-  color 130ms var(--dshm-ease), transform 90ms var(--dshm-ease); }
-.dshm-btn:active, .dshm-disclose:active { transform: scale(.97); }
-.dshm-nav:active { transform: scale(.985); }
+.dshm-btn, .dshm-disclose, .dshm-nav, .dshm-card { transition: background-color var(--dshm-dur-hover) ease,
+  color var(--dshm-dur-hover) ease, transform var(--dshm-dur-press) var(--dshm-ease-out); }
+.dshm-btn:active, .dshm-disclose:active { transform: scale(.97); transition-duration: var(--dshm-dur-press-in); }
+.dshm-nav:active { transform: scale(.985); transition-duration: var(--dshm-dur-press-in); }
 .dshm-mini:active { background: color-mix(in srgb, var(--dsw-alias-label-primary) 10%, transparent); }
 .dshm-mini-cover:active, .dshm-mini-info:active { transform: none; }
 .dshm-ib:active { background: color-mix(in srgb, var(--dsw-alias-label-primary) 12%, transparent); }
@@ -437,7 +438,7 @@ window.__ModuleLoader__.load({
 /* mini player — one host sidebar row, no card */
 .dshm-mini { position: relative; display: block; width: 100%; border: 0; background: transparent;
   border-radius: 7px; padding: 6px 8px 15px; text-align: left; cursor: pointer;
-  transition: background 130ms var(--dshm-ease); }
+  transition: background-color var(--dshm-dur-hover) ease; }
 .dshm-mini:hover { background: color-mix(in srgb, var(--dsw-alias-label-primary) 7%, transparent); }
 .dshm-mini:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: -2px; }
 .dshm-mini-row { display: flex; align-items: center; gap: 9px; min-width: 0; }
@@ -462,8 +463,7 @@ window.__ModuleLoader__.load({
 .dshm-progress[data-variant="mini"] { height: 10px; }
 .dshm-progress[data-variant="sheet"] { height: 20px; }
 .dshm-progress-track { position: relative; width: 100%; border-radius: 999px; overflow: hidden;
-  background: color-mix(in srgb, var(--dsw-alias-label-primary) 14%, transparent);
-  transition: height 130ms var(--dshm-ease); }
+  background: color-mix(in srgb, var(--dsw-alias-label-primary) 14%, transparent); }
 .dshm-progress[data-variant="mini"] .dshm-progress-track { height: 3px; }
 .dshm-progress[data-variant="sheet"] .dshm-progress-track { height: 4px; }
 .dshm-progress[data-variant="mini"]:hover .dshm-progress-track,
@@ -475,7 +475,7 @@ window.__ModuleLoader__.load({
 .dshm-progress-thumb { position: absolute; top: 50%; left: calc(var(--p, 0) * 100%); width: 12px; height: 12px;
   margin: -6px 0 0 -6px; border-radius: 50%; background: var(--dsw-alias-bg-base);
   border: 1px solid var(--dsw-alias-border-l2); box-shadow: 0 1px 4px rgba(0,0,0,.28);
-  opacity: 0; transition: opacity 120ms var(--dshm-ease); pointer-events: none; }
+  opacity: 0; transition: opacity 120ms var(--dshm-ease-out); pointer-events: none; }
 .dshm-progress[data-variant="sheet"]:hover .dshm-progress-thumb,
 .dshm-progress[data-variant="mini"]:hover .dshm-progress-thumb,
 .dshm-progress[data-dragging="true"] .dshm-progress-thumb { opacity: 1; }
@@ -484,7 +484,7 @@ window.__ModuleLoader__.load({
   background: var(--dsw-alias-bg-overlay); border: 1px solid var(--dsw-alias-border-l1);
   font-size: var(--dshm-fs-caption); font-weight: 600; letter-spacing: .01em;
   color: var(--dsw-alias-label-primary); box-shadow: 0 6px 16px rgba(0,0,0,.18);
-  opacity: 0; transition: opacity 110ms var(--dshm-ease); pointer-events: none; }
+  opacity: 0; transition: opacity 110ms var(--dshm-ease-out); pointer-events: none; }
 .dshm-progress[data-dragging="true"] .dshm-progress-bubble { opacity: 1; }
 
 /* now playing popover — Apple Music density: art, name, progress, one control row */
@@ -494,28 +494,31 @@ window.__ModuleLoader__.load({
 .dshm-pop { position: fixed; z-index: 80; display: flex; flex-direction: column;
   background: var(--dsw-alias-bg-overlay); border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 14px; box-shadow: 0 20px 48px rgba(0,0,0,.26); overflow: hidden;
-  transform-origin: bottom left; animation: dshm-pop-in 160ms var(--dshm-ease); pointer-events: auto; }
-.dshm-pop[data-closing="true"] { animation: dshm-pop-out 120ms var(--dshm-ease) forwards; }
-.dshm-pop-head { display: flex; align-items: center; gap: 4px; padding: 8px 8px 0; flex: none; }
-.dshm-pop-title { flex: 1 1 auto; text-align: center; font-size: var(--dshm-fs-caption); font-weight: 600;
-  letter-spacing: .07em; text-transform: uppercase; color: var(--dsw-alias-label-secondary); }
-.dshm-pop-body { padding: 2px 18px 14px; overflow: auto; }
-.dshm-pop-art { width: 100%; aspect-ratio: 1 / 1; max-height: 46vh; margin: 2px auto 0; border-radius: 12px;
+  transform-origin: bottom left; pointer-events: auto; opacity: 1; transform: none;
+  transition: opacity var(--dshm-dur-pop-in) var(--dshm-ease-out),
+    transform var(--dshm-dur-pop-in) var(--dshm-ease-out); }
+@starting-style { .dshm-pop { opacity: 0; transform: translateY(10px) scale(.96); } }
+.dshm-pop[data-closing="true"] { opacity: 0; transform: translateY(12px) scale(.94);
+  transition-duration: var(--dshm-dur-pop-out); pointer-events: none; }
+.dshm-pop-head { display: flex; align-items: center; gap: 2px; padding: 6px 12px 0; flex: none; }
+.dshm-pop-body { padding: 0 16px 16px; overflow: auto; }
+.dshm-pop-art { width: 100%; aspect-ratio: 1 / 1; max-height: 46vh; margin: 6px auto 0; border-radius: 10px;
   overflow: hidden; box-shadow: 0 10px 28px rgba(0,0,0,.20); }
-.dshm-pop-meta { padding: 12px 2px 0; min-width: 0; }
+.dshm-pop-meta { padding: 14px 0 0; min-width: 0; }
 .dshm-pop-name { font-size: 17px; font-weight: 600; letter-spacing: -.01em; line-height: 1.25;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dshm-pop-sub { font-size: 13px; color: var(--dsw-alias-label-secondary); margin-top: 2px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dshm-pop-progress { margin-top: 12px; }
+.dshm-pop-progress { margin-top: 14px; }
 .dshm-pop .dshm-progress-thumb { opacity: 1; }
 .dshm-pop-times { display: flex; justify-content: space-between; align-items: baseline; margin-top: 4px;
   font-size: var(--dshm-fs-caption); color: var(--dsw-alias-label-secondary); }
-.dshm-pop-transport { display: flex; align-items: center; justify-content: space-between; gap: 2px; padding: 10px 2px 2px; }
-.dshm-pop-transport .dshm-ib[data-active="true"] { background: transparent; color: var(--dsw-alias-label-primary); }
-.dshm-pop-volume { display: flex; align-items: center; gap: 8px; padding: 12px 2px 0; }
+.dshm-pop-transport { display: flex; align-items: center; justify-content: center; gap: 18px; padding: 14px 0 0; }
+/* Desktop icon buttons keep the system-style hover plate (HIG · Toolbars). */
+.dshm-pop-volume { display: flex; align-items: center; gap: 8px; padding: 9px 0 0; }
 .dshm-pop-volume .dshm-progress { height: 18px; }
-.dshm-pop-volume .dshm-progress-track { height: 4px; }
+.dshm-pop-volume .dshm-progress-track { height: 3px;
+  background: color-mix(in srgb, var(--dsw-alias-label-primary) 12%, transparent); }
 .dshm-pop-volume .dshm-progress-thumb { opacity: 1; }
 .dshm-pop-more { display: flex; flex-direction: column; gap: 1px; padding-top: 10px; margin-top: 10px;
   border-top: 1px solid var(--dsw-alias-border-l1); }
@@ -568,7 +571,7 @@ window.__ModuleLoader__.load({
 .dshm-btn { height: 28px; padding: 0 11px; border-radius: 8px; border: 1px solid var(--dsw-alias-border-l1);
   background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font-size: var(--dshm-fs-sub);
   font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;
-  transition: background 120ms var(--dshm-ease); }
+  transition: background-color 120ms ease; }
 .dshm-btn:hover { background: var(--dsw-alias-bg-layer-2); }
 .dshm-btn[data-primary="true"] { background: var(--dsw-alias-brand-primary); border-color: transparent;
   color: var(--dsw-alias-bg-base); }
@@ -601,9 +604,11 @@ window.__ModuleLoader__.load({
 .dshm-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px 14px;
   padding: 4px 16px 24px; overflow: auto; }
 .dshm-card { border: 0; background: transparent; padding: 0; text-align: left; cursor: default; border-radius: 10px; }
-.dshm-card:hover .dshm-card-art { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,.14); }
+@media (hover: hover) and (pointer: fine) {
+  .dshm-card:hover .dshm-card-art { transform: translateY(-1px); }
+}
 .dshm-card-art { width: 100%; aspect-ratio: 1/1; border-radius: 10px; overflow: hidden;
-  transition: transform 160ms var(--dshm-ease), box-shadow 160ms var(--dshm-ease); }
+  transition: transform var(--dshm-dur-hover) var(--dshm-ease-out); }
 .dshm-card-title { font-size: var(--dshm-fs-title); font-weight: 600; letter-spacing: -.006em; margin-top: 8px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dshm-card-sub { font-size: var(--dshm-fs-sub); color: var(--dsw-alias-label-secondary); margin-top: 1px;
@@ -615,7 +620,7 @@ window.__ModuleLoader__.load({
 /* menus & dialogs */
 .dshm-menu { position: fixed; z-index: 90; min-width: 212px; padding: 4px; border-radius: 10px;
   background: var(--dsw-alias-bg-overlay); border: 1px solid var(--dsw-alias-border-l1);
-  box-shadow: 0 16px 44px rgba(0,0,0,.26); animation: dshm-fade 120ms var(--dshm-ease); }
+  box-shadow: 0 16px 44px rgba(0,0,0,.26); animation: dshm-fade 120ms var(--dshm-ease-out); }
 .dshm-menu-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border: 0;
   border-radius: 6px; background: transparent; font-size: 12.5px; color: var(--dsw-alias-label-primary);
   cursor: pointer; text-align: left; }
@@ -656,25 +661,23 @@ window.__ModuleLoader__.load({
   padding: 8px 10px; max-height: 190px; overflow: auto; white-space: pre-wrap; color: var(--dsw-alias-label-secondary); }
 .dshm-toggle { appearance: none; width: 36px; height: 21px; border-radius: 11px; border: 0; padding: 0;
   background: color-mix(in srgb, var(--dsw-alias-label-primary) 22%, transparent); position: relative;
-  cursor: pointer; flex: none; transition: background 150ms var(--dshm-ease); }
+  cursor: pointer; flex: none; transition: background-color var(--dshm-dur-hover) ease; }
 .dshm-toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 17px; height: 17px;
   border-radius: 50%; background: var(--dsw-alias-bg-base); box-shadow: 0 1px 2px rgba(0,0,0,.22);
-  transition: transform 160ms var(--dshm-ease); }
+  transition: transform 160ms var(--dshm-ease-out); }
 .dshm-toggle[aria-checked="true"] { background: var(--dsw-alias-brand-primary); }
 .dshm-toggle[aria-checked="true"]::after { transform: translateX(15px); }
 
 /* lyrics */
 .dshm-lyrics { padding: 8px 2px 10px; max-height: 220px; overflow: auto; }
 .dshm-lyric-line { font-size: var(--dshm-fs-body); line-height: 1.95; color: var(--dsw-alias-label-secondary);
-  transition: color 160ms var(--dshm-ease); }
+  transition: color var(--dshm-dur-hover) ease; }
 .dshm-lyric-line[data-active="true"] { color: var(--dsw-alias-label-primary); font-weight: 600; }
 
 @keyframes dshm-fade { from { opacity: 0 } to { opacity: 1 } }
-@keyframes dshm-pop-in { from { opacity: 0; transform: translateY(8px) scale(.97) } to { opacity: 1; transform: none } }
-@keyframes dshm-pop-out { from { opacity: 1; transform: none } to { opacity: 0; transform: translateY(6px) scale(.985) } }
-@keyframes dshm-rise { from { opacity: 0; transform: translateY(10px) scale(.995) } to { opacity: 1; transform: none } }
 @media (prefers-reduced-motion: reduce) {
   .dshm-pop, .dshm-menu { animation: none !important; }
+  .dshm-pop { transition: none !important; }
   .dshm-ib, .dshm-lyric-line, .dshm-toggle, .dshm-toggle::after, .dshm-card-art,
   .dshm-progress-track, .dshm-progress-thumb, .dshm-mini { transition: none !important; }
 }
@@ -812,7 +815,7 @@ window.__ModuleLoader__.load({
       return h(ErrorBoundary, { fallback }, h(Component, props))
     }
 
-    function IconButton({ name, label, onClick, disabled, active, size = 'sm', pressed, autoFocus }) {
+    function IconButton({ name, label, onClick, disabled, active, size = 'sm', glyph, pressed, autoFocus }) {
       return h('button', {
         type: 'button',
         className: 'dshm-ib',
@@ -825,7 +828,7 @@ window.__ModuleLoader__.load({
         disabled: disabled === true,
         onClick: (event) => { event.stopPropagation(); onClick?.(event) },
         onPointerDown: (event) => event.stopPropagation(),
-      }, h(Icon, { name, size: size === 'xl' ? 20 : size === 'lg' ? 18 : 16 }))
+      }, h(Icon, { name, size: glyph ?? (size === 'lg' ? 18 : 16) }))
     }
 
     function Cover({ track, albumKey, size, radius = 8, trackId }) {
@@ -1021,7 +1024,8 @@ window.__ModuleLoader__.load({
           if (event.key === 'ArrowLeft') { event.preventDefault(); onChange(Math.max(0, value - 5)) }
           if (event.key === 'ArrowRight') { event.preventDefault(); onChange(Math.min(100, value + 5)) }
         },
-      }, h('div', { className: 'dshm-progress-track' }, h('div', { className: 'dshm-progress-fill' })))
+      }, h('div', { className: 'dshm-progress-track' }, h('div', { className: 'dshm-progress-fill' })),
+        h('div', { className: 'dshm-progress-thumb' }))
     }
 
     function TimeText({ getPlayer, className }) {
@@ -1110,10 +1114,36 @@ window.__ModuleLoader__.load({
       const wide = props?.wide !== false
       const track = useTrack(player?.trackId ?? null, status)
       const [open, setOpen] = useState(false)
+      const [closing, setClosing] = useState(false)
+      const closeTimer = useRef(null)
       const wrapRef = useRef(null)
       const latest = useRef(player)
       latest.current = player
       const getPlayer = useCallback(() => latest.current, [])
+      // Closing keeps the panel mounted for one short exit transition; pressing
+      // again mid-exit reopens it from its current position instead of restarting.
+      // Hooks stay above the empty-state return: a track arriving must not add
+      // hooks mid-lifecycle (React #310).
+      const close = useCallback(() => {
+        clearTimeout(closeTimer.current)
+        setClosing(true)
+        closeTimer.current = setTimeout(() => { setClosing(false); setOpen(false) }, POP_EXIT_MS)
+      }, [])
+      useEffect(() => () => clearTimeout(closeTimer.current), [])
+
+      // Optimistic transport: the icon flips on press instead of after the host
+      // round-trip. Cleared when the snapshot agrees, or after a short timeout.
+      const [pendingPlay, setPendingPlay] = useState(null)
+      const actualPlaying = player?.playing === true && player?.paused !== true
+      useEffect(() => {
+        if (pendingPlay === null) return
+        if (pendingPlay === actualPlaying) setPendingPlay(null)
+      }, [pendingPlay, actualPlaying])
+      useEffect(() => {
+        if (pendingPlay === null) return undefined
+        const id = setTimeout(() => setPendingPlay(null), 1500)
+        return () => clearTimeout(id)
+      }, [pendingPlay])
 
       if (track === null) {
         return h('button', {
@@ -1129,10 +1159,21 @@ window.__ModuleLoader__.load({
         wide ? h('span', { className: 'dshm-mini-sub', style: { color: 'var(--dsw-alias-label-secondary)' } }, t('mini.empty')) : null)
       }
 
-      const playing = player.playing === true && player.paused !== true
+      const playing = pendingPlay ?? actualPlaying
+      const togglePlayback = () => {
+        setPendingPlay(!actualPlaying)
+        guarded(command('player.toggle'), t('mini.play')).then((result) => {
+          if (result === null) setPendingPlay(null)
+        })
+      }
       const showProgress = wide && (status?.prefs?.miniProgress !== false)
       const stop = (event) => event.stopPropagation()
-      const toggle = () => setOpen((value) => !value)
+      const toggle = () => {
+        clearTimeout(closeTimer.current)
+        if (open && !closing) { close(); return }
+        setClosing(false)
+        setOpen(true)
+      }
 
       return h('div', { ref: wrapRef, className: 'dshm dshm-mini-wrap' },
         h('div', {
@@ -1166,7 +1207,7 @@ window.__ModuleLoader__.load({
             h(IconButton, {
               name: playing ? 'pause' : 'play',
               label: playing ? t('mini.pause') : t('mini.play'),
-              onClick: () => guarded(command('player.toggle'), t('mini.play')),
+              onClick: togglePlayback,
             }),
             h(IconButton, { name: 'next', label: t('mini.next'), onClick: () => guarded(command('player.next'), t('mini.next')) })) : null),
 
@@ -1186,12 +1227,15 @@ window.__ModuleLoader__.load({
         },
           h(MiniPopover, {
             open,
+            closing,
+            playing,
+            onToggle: togglePlayback,
             wrapRef,
             track,
             player,
             status,
             getPlayer,
-            onClose: () => setOpen(false),
+            onClose: close,
           })))
     }
 
@@ -1221,7 +1265,6 @@ window.__ModuleLoader__.load({
         type: 'button',
         className: 'dshm-ib dshm-focusable',
         'data-mode': current,
-        'data-active': current === 'sequence' ? undefined : 'true',
         'aria-label': label,
         title: label,
         onClick: (event) => {
@@ -1254,7 +1297,7 @@ window.__ModuleLoader__.load({
       return h('span', { ref }, '-0:00')
     }
 
-    function MiniPopover({ open, wrapRef, track, player, status, getPlayer, onClose }) {
+    function MiniPopover({ open, closing, playing, onToggle, wrapRef, track, player, status, getPlayer, onClose }) {
       const panelRef = useRef(null)
 
       // Dismiss on outside press, but not when the press is the mini row itself
@@ -1300,12 +1343,12 @@ window.__ModuleLoader__.load({
       const bottom = Math.max(8, window.innerHeight - (anchorTop - 8))
       const maxHeight = Math.max(240, window.innerHeight - bottom - 12)
 
-      const playing = player?.playing === true && player?.paused !== true
       const mode = player?.mode ?? 'all'
 
       return h('div', {
         ref: panelRef,
         className: 'dshm dshm-pop',
+        'data-closing': closing ? 'true' : undefined,
         role: 'dialog',
         'aria-modal': 'false',
         'aria-label': t('np.title'),
@@ -1314,7 +1357,8 @@ window.__ModuleLoader__.load({
       },
       h('div', { className: 'dshm-pop-head' },
         h(IconButton, { name: 'chevronDown', label: t('np.collapse'), onClick: onClose, autoFocus: true }),
-        h('div', { className: 'dshm-pop-title' }, t('np.title')),
+        h('div', { className: 'dshm-grow' }),
+        h(ModeButton, { mode }),
         h(IconButton, {
           name: 'queue',
           label: t('np.queue'),
@@ -1346,14 +1390,14 @@ window.__ModuleLoader__.load({
           h(IconButton, {
             name: playing ? 'pause' : 'play',
             label: playing ? t('mini.pause') : t('mini.play'),
-            size: 'xl',
-            onClick: () => guarded(command('player.toggle'), t('mini.play')),
+            size: 'lg',
+            glyph: 20,
+            onClick: onToggle,
           }),
           h(IconButton, {
             name: 'next', label: t('mini.next'), size: 'lg',
             onClick: () => guarded(command('player.next'), t('mini.next')),
-          }),
-          h(ModeButton, { mode })),
+          })),
 
         h('div', { className: 'dshm-pop-volume' },
           h(IconButton, {
