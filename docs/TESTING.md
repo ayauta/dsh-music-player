@@ -5,7 +5,7 @@
 
 > 规范看 `docs/DESIGN.md`；规则看 `AGENTS.md`。本文件不放产品决策。
 
-最后更新：2026-11-07（C2 瘦身 Phase 1；验证对象为未提交工作区）
+最后更新：2026-11-11（文档重构：§3 补入脚本副作用口径，判定规则内联；历史记录不改写）
 
 ---
 
@@ -150,7 +150,8 @@ Inspector 的 slot 与 active / 可见状态 / Git HEAD 与脏净 / 结果。
 
 > **`active: true` 不等于渲染正常。** 它只表示该贡献未被 shell 弃权（abdicate）。
 > 本插件的 `guardedCell` 会在 shell 的边界**内侧**先接住渲染异常，因此本插件三处 slot 的崩溃
-> 对 shell 不可见，Inspector 会继续显示 `active: true`。判读规则见 `docs/CURRENT.md` §4。
+> 对 shell 不可见，Inspector 会继续显示 `active: true`。因此 `active: true` 只算 slot 注册证据，
+**不算渲染证据**；渲染要看第 8 步的人眼观察。
 
 ### 2.3 模型驱动的状态机回归（日常档 + 压力档）
 
@@ -184,6 +185,30 @@ fast-check 负责生成、seed 与数组 shrink；该属性是异步且带状态
 
 ---
 
+### 2.4 动效验证（2026-11-12，来源 `DESIGN.md` §6）
+
+**静态守卫（L1，随 `npm test` 跑）**
+
+| # | 断言 | 失败含义 |
+|---|---|---|
+| 1 | `transition` / `animation` 的时长 ∈ 白名单 `{0,110,120,130,150,160,200,240}` | 出现未批准的时长 |
+| 2 | `transition` 不含 `height` / `width` / `top` / `left` / `margin` / `padding` / `box-shadow` | 动了布局或绘制属性 |
+| 3 | 不出现裸 `ease-in`（`ease-in-out` 与自定义贝塞尔允许） | 动画在用户注视点最慢 |
+| 4 | 每个 `@keyframes` 名至少被引用一次 | 死动效 |
+| 5 | 每个 `[data-x="…"]` 选择器在 JS 里至少被写入一次 | 不可达状态（如 B22） |
+| 6 | `:hover` 上的 `transform` 位于 `@media (hover: hover) and (pointer: fine)` 内，或在豁免表登记 | 触控误触 |
+| 7 | 单次 `animation` ≤300ms | 违反上限 |
+
+**人工（L4）**
+
+- 0.25× 录屏：进入与退出同路径、关闭不瞬断、快速开关不从头重播；
+- `prefers-reduced-motion: reduce` 下无位移、无缩放，但仍能感知状态变化；
+- 亮 / 暗两个主题各看一遍，确认动效不改变层级；
+- 记录按 §7；任一项不过就写 `Failed`，不得写"基本可用"。
+
+**豁免表**：目前无。新增豁免必须写理由与到期条件。
+
+---
 ## 3. 默认拒绝的脚本（Phase 0B-1 起由代码强制）
 
 ```
@@ -196,6 +221,8 @@ scripts/loadtest.mjs        ← 另需 DSH_MUSIC_ALLOW_PERF=1，缺任一项退�
 - `test/guard.test.mjs` 用一个本地计数 HTTP 服务验证"拒绝时目标收到 0 个请求"。
 - 原 `playback-test` 的**逻辑**已迁移到 L2（`test/integration/playback.test.mjs`），
   这个脚本只保留为真实宿主的诊断入口。
+- 两者都会改**真实队列、真实设置与当前播放**；隔离改造完成前禁止自动执行。
+  副作用矩阵见 §4（原 `LIMITATIONS.md` §四 的口径已并入本节）。
 
 ---
 
@@ -234,7 +261,7 @@ npm test                       # = node --test "test/*.test.mjs"
 - 到达队尾时 `sequence` 停止 / `all` 回绕 / `shuffle` 重排 / `one` 重播（手动与 EOF 两条路径分开测）
 - `setMode` 不触发重载（断言 engine 的 `load` 次数）
 - 队列编辑（enqueue/remove/move/setQueue）后当前曲与位置是否保持
-- 重复曲目时的游标定位（当前用 `indexOf`，已知薄弱点，见 `LIMITATIONS.md` B13）
+- 队列条目唯一：同一曲目不会入队两次（B13 已结构性消除，见 D-15）
 - `dispose → init` 往返与异常存档降级
 
 未覆盖、也不打算在 L1 覆盖：淡变的听感与真实时序、mpv 的无缝推进竞态（L2）、UI 高亮（L3）。
@@ -320,6 +347,7 @@ npm run smoke -- --library <path> --allow-real-library   # 只读诊断，需显
 > 每条记录只代表**当次运行**。脚本后来被改过、宿主后来被重启过、代码后来被改过，
 > 都不能把旧结论平移到当前版本；需要重新跑并新起一行。
 > **历史 Failed 与当前版本 Not tested 是两件事**（见 `docs/DESIGN.md` 规则 3）。
+> 被后续运行取代的记录**保留原样、不改写**：在「适用范围」列标注"已被…取代"，不删除。
 
 | 日期 | 类型 | 版本 / commit | 层 | 步骤 | 结果 | 执行者 | 适用范围 |
 |---|---|---|---|---|---|---|---|
@@ -403,6 +431,15 @@ npm run smoke -- --library <path> --allow-real-library   # 只读诊断，需显
 | 2026-11-07 | Automated（**真实库的隔离副本**，只读真实文件） | 工作区（Phase 1 收尾） | — | 复制 `library.db` + `-wal` + `-shm` 到临时目录 → 读 `user_version` 与 `scan_runs` 列 → 用 v2 代码打开、写一条 run、读回、核对 85 行 id | **Passed（向前兼容）**：真实库是 **v3**（多出 `conflicts` 列，来自被否决的 C2 构建）；v2 代码读出 **85 行、id 全同**，run 可读写，`user_version` **保持 3 不降级**；副本已删除 | Agent | 证明 v2 代码能安全读写 v3 文件；**真实文件未被打开**（mtime 未变）。是否把真实库降回 v2 由用户决定 |
 | 2026-11-07 | **Manual** | `59a1e9b`（真实 Desktop，host release `0.2.2-rc.1 / c59d10a`，端口 50811） | L3 | 用户启用插件后手动点播、播放 / 暂停 / 切歌；Agent 只读读取 `status` / `diag.logs` 并截图 | **Passed（仅限下列范围）**：库 85 首、4 个来源；数据库 v2、`integrity_check = ok`；启动未触发扫描或升级；6 首 shuffle 队列与设置恢复；mpv 加载 `…09.《破碎时间》…24bits.48khz.wav`，`ao=wasapi`、`exclusive=false`，解码 `s32/48k/2ch`、设备 `float/48k/2ch`；`playing=true`、位置正常推进、`lastError=null`；用户点播触发 `queue.play` → 7 首 `sequence` 取代 6 首 `shuffle`（**预期行为，不是异常**） | 用户（试听）+ Agent（只读） | 覆盖：读取、点播、WASAPI 共享输出与状态同步。**不覆盖**：音乐库与队列页面的完整交互、UI 进度与控制状态的逐项核对、DOM Bundle ID、缺失曲目界面与重新定位（未实现）、扫描失败状态的 UI（未实现）。**副作用**：试听期间 `app_state` 按设计被写入（位置 / 队列 / 模式），数据库以 WAL 打开 |
 | 2026-11-07 | Automated（**只读**） | `59a1e9b`（端口 50811） | L3 | `POST /music/api` 的 `status` / `library.scanStatus` / `roots.list` / `queue.list` / `player.state` / `diag.logs`；复制 `library.db` + `-wal` + `-shm` 读 `user_version` / `integrity_check` / `table_info`；`bundle-id --served`；`capture-window.ps1` 截图 | **Passed（只读取证）**：`user_version 2`、`scan_runs` 无 `conflicts`、4 条 run 的 `startedAt` 未变（未自动扫描）、`trackId 4b5f76…` / shuffle / 73 与迁移前备份一致、served 字节 = 工作区 `client.js`（`dshm-3c68b1072173`）、`diag.logs` 1 条 0 warn/error | Agent | 不构成人工验收，不能证明渲染细节或出声质量。截图 `C:\Users\andy\AppData\Local\Temp\dshm-l3\live.png` 只覆盖迷你行与侧栏入口 |
+| 2026-11-12 | Automated | 工作区（未提交，动效修复 B22–B28 + #310 修复） | L1 | `npm test`（新增 `test/motion-source.test.mjs` 7 例 + `client-source` 的 hooks 顺序守卫） | **Passed**：103 tests / 0 fail / 890ms | 脚本 | 静态守卫：时长白名单、禁布局/绘制属性、禁裸 `ease-in`、keyframes 引用与 ≤120ms、`data-*` 写入、hover 门控、**hooks 必须在 early return 之前**；**不覆盖**真实动效手感（需重启 L3） |
+| 2026-11-12 | Automated | 工作区（未提交，bundle `dshm-7031e31a7568`） | L3（只读） | `bundle-id --served --url http://127.0.0.1:52224`（宿主 `0.2.2-rc.1 / c59d10a`） | **Passed**：served 130 637 B、source/served id 同为 `dshm-7031e31a7568`、artifact rev `ee922db9fe3a` 与宿主一致 | 脚本 | 只证明宿主会提供这份字节；**不证明**渲染与动效手感 |
+| 2026-11-12 | Automated | 工作区（未提交，动效修复后） | L2 | `npm run test:l2`（隔离 `DSH_HOME`、`ao=null`） | **Passed**：51 tests / 0 fail / 28.2s | 脚本 | 客户端改动不影响 Host 集成；本次为确认无连带回归 |
+| 2026-11-12 | Automated | 工作区（未提交，动效修复后） | L2 | `npm run smoke`（夹具库） | **Passed**：SMOKE PASSED，`temp root removed` | 脚本 | 同上 |
+| 2026-11-12 | Automated | 工作区（未提交，动效二轮：退出可感知 + 按压不对称 + 乐观图标） | L1 | `npm test`（新增 exit-timer 同步守卫） | **Passed**：104 tests / 0 fail / 847ms | 脚本 | 新增：`POP_EXIT_MS` 必须等于 `--dshm-dur-pop-out`；**不覆盖**手感与图标即时性（需重启 L3） |
+| 2026-11-12 | Automated | 工作区（未提交，面板版式 §7） | L1 | `npm test`（新增传输行守卫：三键 + 模式在 header） | **Passed**：105 tests / 0 fail / 861ms | 脚本 | 守卫：传输行恰好 3 个 IconButton 且不含 ModeButton；header 必须含 ModeButton 且不得有可见标题；**不覆盖**视觉节奏（需重启 L3） |
+| 2026-11-12 | Automated | 工作区（未提交，模式 / 进度 / 传输悬停按 HIG 修正） | L1 | `npm test`（新增模式键守卫 + 传输悬停守卫） | **Passed**：106 tests / 0 fail / 844ms | 脚本 | 守卫：`ModeButton` 不得出现 `data-active`；传输行三键必须同为 `size: 'lg'` 且不得出现 `xl`（HIG：用样式不用尺寸）；hover 不得被改成 `transparent`；**不覆盖**视觉观感（需重启 L3） |
+| 2026-11-12 | **Manual** | `dshm-c517ae41e53e`（重启后的真实宿主；served artifact rev `07613eca9631`） | L3 | 用户重启后查看播放面板：模式四态无底色、进度/音量滑块常显、传输三键同尺寸 44、悬停圆角矩形底、音量标准滑块 | **Passed**：用户确认"功能符合预期" | 用户 | 覆盖视觉与基本交互；**不覆盖**录屏逐帧判读、空队列状态、字体缩放 |
+| 2026-11-12 | Manual（实机） | `dshm-cfd78a28fa9c`（重启后的宿主，端口 63179） | L3 | 用户重启后观察侧栏 | **Failed**：`Minified React error #310`（hooks 在空态 early return 之后，曲目出现时 hook 数量变化） | 用户（截图） | 已修：hooks 上移 + 静态守卫；新 bundle `dshm-7031e31a7568` 待重启复验 |
 
 **关于 2026-10-29 那条 L3 记录（`scripts/playback-test.mjs`）的说明**：
 
@@ -428,6 +465,59 @@ npm run smoke -- --library <path> --allow-real-library   # 只读诊断，需显
 | 10 | 不擅自改动本地音乐 | 写操作只落在插件数据目录 | 设计约束，见 `AGENTS.md` §12 |
 | 11 | 禁用/卸载释放资源 | mpv 进程计数归零 | 未复验 |
 | 12 | 明暗主题 / 尺寸 / 折叠态 | 只用语义 token；`wide` 适配折叠 | **暗色从未截图验证**（`DESIGN.md` R01.b） |
+
+---
+
+### 8.2 2026-11-07 Codex UI 实地走查
+
+验证对象：`2473b79` / 插件 1.7.0；开始时工作区 clean。执行者 Agent（Codex）。
+宿主 `0.2.2-rc.1 / c59d10a`，Windows，`@oai/sky` Computer Use；主题最初为跟随系统（呈浅色），
+临时切深色，随后恢复跟随系统。截图坐标范围约 799×601 / 1920×1032，不当作 DOM CSS 测量。
+完整 UI 发现与截图索引见 [实地审计](UI_AUDIT_2026-11-07.md)。
+
+#### Automated（隔离与只读诊断）
+
+| 命令 / 方法 | 退出码 | 结果 | 耗时 |
+|---|---|---|---|
+| `npm.cmd test` | 0 | 95 通过：94 回归、1 诊断（B11 仅说明已知行为可复现），0 失败/跳过 | Node 汇总 1017.5 ms |
+| `npm.cmd run test:l2` | 0 | 51 回归通过，0 失败/跳过；独立 DSH_HOME、夹具、ao=null；包括播放、队列、扫描失败与来源生命周期 | Node 汇总 29347.9 ms |
+| `npm.cmd run smoke` | 0 | 21 项检查（含临时根清理）通过；ao=null、夹具库 | 命令墙钟约 8.52 s |
+| `node scripts/bundle-id.mjs --served --url http://127.0.0.1:50811` | 0 | source/served `dshm-3c68b1072173`，129615 bytes 内容相同；artifact rev `6f4d96484937` | 命令墙钟约 0.59 s |
+| node_repl + VM 提取当前 `attachKeyboard`，仅桩 document/session/command | 成功执行（非独立进程） | DIV / BUTTON / defaultPrevented Space 均记录 toggle；INPUT 不触发；是函数诊断，不是宿主传播验收 | 未单独计时 |
+
+键盘诊断首次提取范围错误报 `Illegal return statement`，修正为完整函数范围后才取得上述结果；
+未改源文件。原始结果 `artifacts/ui-audit-20261107-codex/isolated-keyboard-diagnostic.json`。
+未运行禁用的 live/perf 脚本。测试没有访问真实音乐文件或真实数据库。
+
+#### Manual（Agent 操作真实 GUI，API 辅助只读取证）
+
+| 步骤 | 结果 | 观察 |
+|---|---|---|
+| 音乐 → 全部歌曲，控件输入“莲梦” / 无匹配关键词 / 清空 | Passed | 2 首 / 无匹配提示 / 恢复原内容；通过 UIA set_value 输入，不能等同实测中文 IME 全链路 |
+| 专辑页输入无匹配关键词 | Failed | 仍显示全部 27 张；工具与页面能力不一致 |
+| 收藏零首 | Failed | 显示“音乐库是空的”与添加文件夹 |
+| 专辑“于山”进入详情 | Failed | 标题“原唱”，曲目仍为“于山” |
+| 更多 → 文件与规格 | Failed | 菜单消失，无对话框 |
+| 展开面板 → 播放 → 暂停 | Passed | Host 播放态变化，迷你行/面板同步按钮，暂停后稳定；不表示音质人工听验通过 |
+| 暂停时进度条从尾部拖到中段 | Passed | position 146986 → 72918 ms，保持 paused；面板时间和迷你进度随后同步 |
+| 静音按钮 | 功能 Passed / 标签 Failed | muted=true 生效，名称仍是“静音” |
+| Escape、浮层队列入口 | Passed / R06 缺口 | Escape 关闭；队列按钮关闭浮层并显示主队列，尚无面板内切换 |
+| 约 799×601 全部歌曲 | Failed | 标题列几乎消失、次要固定列仍占宽；最大化恢复可读 |
+| 同一矮窗口展开浮层，再滚动 | Passed（可达性） | 音量最初在下方，滚动可到达；未判成控件丢失 |
+| 深色设置/队列/浮层/艺术家/文件夹/播放列表 | 已观察，非整套视觉验收 | 未见白色整页失配；浮层明显偏亮；不推导全部页面/对比度/动态效果通过 |
+| 宿主设置内 Space；离开音乐后会话正文 Space | 未复现误播放 | 两次 API 均仍 paused；不能冒充键盘修复通过，真实传播链仍待验证 |
+
+真实状态副作用已获用户本轮全面测试授权，播放前已告知可能出声；
+先调用 `db.backup`，备份为 `$DSH_HOME/plugin-data/dsh-music/backups/library-2026-11-07T13-54-21-463Z.db`。
+随后有限操作播放/暂停/seek/mute、宿主主题与导航。应用按设计更新播放持久化。
+未对真实库扫描/增删来源、编辑收藏/歌单/元数据、拖排/清空队列或修改音频文件。
+结束 API 核对：七首队列及顺序、trackId、mode、volume、muted、prefs 全同；
+paused=true，positionMs 精确恢复为 138179，tracks=85、roots=4。
+窗口恢复最初约 799×601、会话页、折叠侧栏；主题恢复跟随系统。
+前后快照在证据目录 `before-status.json` / `after-status.json`。
+
+限制：只读 served 核对不证明 DOM runtime bundle ID；本轮未重启或修改 Client。
+未覆盖组合、媒体键、真实故障与队列手感等见实地审计末节；以上 Passed 只覆盖对应步骤。
 
 ---
 

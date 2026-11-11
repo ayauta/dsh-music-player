@@ -57,8 +57,8 @@ Program Files → chocolatey → PATH）。**找不到 mpv 不会失败**，自�
 5. 设置 →「音乐」：扫描目录、重新扫描、默认音量、启动恢复队列、引擎状态、独占输出、
    列表密度、迷你播放器进度线、诊断日志、数据库备份、清理缓存。
 
-**已知问题**：音乐库「播放队列」一栏当前渲染空白（见 [`docs/CURRENT.md`](docs/CURRENT.md) B1）。
-面板内的封面/队列切换是已批准但尚未实现的目标（[`docs/DESIGN.md`](docs/DESIGN.md) R06）。
+**已知差距**：面板内的封面 ⇄ 队列切换是已批准但尚未实现的目标（[`docs/DESIGN.md`](docs/DESIGN.md) R06）；
+其余限制与缺陷见 [`LIMITATIONS.md`](LIMITATIONS.md)。
 
 **键盘**：`空格` 播放/暂停，`Shift+←/→` 上/下一曲，`Esc` 关闭面板；按钮可 Tab 聚焦并带 `aria-label`；
 进度条与音量条可聚焦后用方向键调整。
