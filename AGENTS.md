@@ -143,6 +143,7 @@ DeepSeek Harness（DSH）的本地 Hi-Res 音乐播放器插件：
 
 ## 6. 提交 ≠ 已验证
 
+- 提交前跑 `npm run check`（语法 + L1）；`.githooks/pre-commit` 已强制，`core.hooksPath=.githooks`。
 - 提交只代表"写完了"。
 - 只要没有跑过，就必须登记进 `docs/CURRENT.md` 的"未验证"表。
 - 验证记录写进 `docs/TESTING.md` 的"验证记录"：日期、commit、命令、结论、执行者（自动/人工）。
