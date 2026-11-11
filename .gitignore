@@ -2,3 +2,6 @@ node_modules/
 artifacts/
 *.log
 .DS_Store
+
+# 本地安装的 agent skills（由 $DSH_HOME/tools/sync-mattpocock-skills.ps1 生成，不入库）
+.dsh/
