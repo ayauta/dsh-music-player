@@ -1,0 +1,6 @@
+#!/bin/sh
+# Repository check before every commit: syntax + the fast unit suite.
+# Enable with: git config core.hooksPath .githooks
+set -e
+cd "$(git rev-parse --show-toplevel)"
+npm run check --silent
