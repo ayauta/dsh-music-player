@@ -12,7 +12,7 @@
 | 项 | 值 |
 |---|---|
 | 分支 | `master`，无其它分支 |
-| HEAD | `2473b79` 起；本轮只有文档改动，未提交。真实 HEAD 以 `git log -1` 为准 |
+| HEAD | `3a2ed7a`（本轮四个提交：`28d57c4` chore / `c67ba6c` 文档合并 / `d936ead` 设计规范 / `3a2ed7a` 客户端）；真实 HEAD 以 `git log -1` 为准 |
 | 版本 | `1.7.0`。`b8dc624` 之后的全部工作未发版，见 `CHANGELOG.md` → `[Unreleased]` |
 | 最近验证基线 | **`dshm-c517ae41e53e`（Manual L3，2026-11-12）**：用户重启后确认播放面板"功能符合预期"（模式四态、滑块常显、三键同尺寸、音量滑块）；同版本 L1 106/106。上一条 `2473b79` 见 TESTING §8.2 |
 | 更早的真实宿主基线 | `59a1e9b`：真实库 v2、85 首 / 4 来源、WASAPI 试听通过 |
@@ -73,4 +73,5 @@
 - 第五轮：面板版式按 DESIGN §7 落地（去标题、三键传输、模式进 header、16px 边距、封面圆角 10、音量按 HIG 还原为标准滑块）；新增传输行静态守卫；`npm test` **105/105**；bundle → **`dshm-c517ae41e53e`**
 - 第六轮：模式键去掉状态背景（HIG Buttons 的 prominent 样式不该给工具键）、进度滑块改常显（HIG Sliders）；`npm test` **106/106**；bundle → **`dshm-c517ae41e53e`**
 - 交接：`docs/handoffs/2026-11-12.md`（状态快照、未验证项、下一步排序、可直接粘贴的开场）
-- 第七轮：用户重启后 L3 通过，served artifact rev `07613eca9631` 与源码一致；随后提交（见 git log）
+- 第七轮：用户重启后 L3 通过，served artifact rev `07613eca9631` 与源码一致
+- 第八轮：按四类改动提交（chore / 文档合并 / 设计规范 / 客户端实现），工作区 clean
