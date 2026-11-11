@@ -28,6 +28,7 @@
     }
   },
   "scripts": {
+    "check": "node --check index.js && node --check client.js && npm test",
     "test": "node --test \"test/*.test.mjs\"",
     "test:l2": "node --test \"test/integration/*.test.mjs\"",
     "smoke": "node scripts/service-smoke.mjs",
