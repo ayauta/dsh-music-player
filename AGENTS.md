@@ -2,7 +2,8 @@
 
 本文件是任何 AI / 人类接手本仓库时的**第一入口**。规则优先于聊天记录、临时交接文件与历史摘要。
 进度与当前状态看 `docs/CURRENT.md`；术语看 `GLOSSARY.md`；产品规范看 `docs/DESIGN.md`；测试方法看 `docs/TESTING.md`；
-技术架构看 `ARCHITECTURE.md`；已知限制看 `LIMITATIONS.md`；决策史看 `docs/DECISIONS.md`。
+技术架构看 `ARCHITECTURE.md`；已知限制看 `LIMITATIONS.md`；决策史看 `docs/DECISIONS.md`；
+设计取证与来源义务看 `docs/agents/design-process.md`。
 
 
 ---
@@ -192,6 +193,10 @@ DeepSeek Harness（DSH）的本地 Hi-Res 音乐播放器插件：
 - 不删除测试、不跳过断言、不放宽基准来让结果变绿。
 - 测试失败时：修代码，或标注"已知失败 + 原因 + 责任人/下一步"。
 - 若断言本身写错，单独提交并说明理由。
+- **替身不得比被测对象更同步**：假引擎 / 假 IO 若同步返回，所有"读取在途"的竞态都会从测试里消失，
+  `/diagnosing-bugs` 的闭环就在一个不存在的世界里自证（B35 连续三次修错层的根本原因）。
+  夹具要么能挂起（见 `test/support/player-harness.mjs` 的 `holdNextTimePos`），
+  要么在测试里写明它表达不了这类竞态。
 
 
 ---
@@ -248,105 +253,29 @@ AGENTS.md
 
 ---
 
-## 14. 禁止事项（快速清单）
+## 14. 禁止事项
 
-- ❌ 未读 `CURRENT.md` 就改代码
-- ❌ 一轮里做多个不相关改动
-- ❌ 擅自修改 `DESIGN.md` 中 Approved 的条目
-- ❌ 声称"已验证"而没有可复现证据
-- ❌ 用页面刷新代替宿主重启来验证 client 改动
-- ❌ 让默认测试命令写真实库 / 播放队列 / 用户设置
-- ❌ 自动执行 `scripts/playback-test.mjs`、`scripts/loadtest.mjs`（见 TESTING 的禁用清单）
-- ❌ 提交调试探针（`*probe*.mjs`、临时脚本）到仓库
-- ❌ 删除测试或放宽断言来"修复"失败
-- ❌ 在没有备份时改持久化数据形状（迁移不再要求，见 D-21）
-- ❌ 复用或重排已分配的需求 / 决策 ID（见 §2.2）
-- ❌ 把同一事实在五份文档里各写一遍（见 §2.1）
-- ❌ 给出没有来源的设计结论（见 §16.1）；给不出就写 `假设（无来源）`
+一句话：**禁止 = 上文各节的硬约束，本节不另立条文。** 未读 `CURRENT.md` 就动手见 §1；
+一轮多个不相关改动见 §3；擅改 Approved 见 §2、无备份改持久化形状见 §11、复用 ID 见 §2.2；
+同一事实写多遍见 §2.1；声称已验证见 §6；刷新代替重启见 §7；删测试/放宽断言见 §9；
+测试写真实状态见 §12；无来源的设计结论见 §16；**新引依赖不走三道门见 `docs/DECISIONS.md` D-26**
+（默认平台优先，判"谁拥有这块逻辑"而不是判行数）。
 
-
+唯一没有上文归属：**不把调试探针（`*probe*.mjs`、临时脚本）提交进仓库。**
 
 ---
 
 ## 15. Agent skills（本地安装，两个来源）
 
-技能包放在项目级 `.dsh/skills/`（DSH 项目根 = 本仓库，rank 高于 `$DSH_HOME/skills` 的用户级副本）。
-两个本地来源，都不要手改：
-
-| 来源 | 装了什么 | 用途 |
-|---|---|---|
-| <https://github.com/mattpocock/skills> | `skills/engineering` + `skills/productivity`（27 个） | 工程流程：grill / spec / tickets / tdd / review |
-| <https://github.com/emilkowalski/skills> | `skills/*`（17 个；`prototype` 与 matt 重名，跳过） | UI/UX 与动效：`apple-design`、`emil-design-eng`、`review-animations` |
-
-更新：重跑通用同步脚本（`-Slug` 区分来源，manifest 记录上游 commit）。
-
-```powershell
-pwsh -File "$env:DSH_HOME\tools\sync-skill-repo.ps1" -Slug mattpocock -RepoUrl https://github.com/mattpocock/skills -SkillPaths skills/engineering,skills/productivity -Workspace .
-pwsh -File "$env:DSH_HOME\tools\sync-skill-repo.ps1" -Slug emilkowalski -RepoUrl https://github.com/emilkowalski/skills -SkillPaths skills -Skip prototype -Workspace .
-```
-
-`sync-mattpocock-skills.ps1` 保留为兼容包装；`.dsh/skills/.<slug>-skills.json` 是 manifest；`.dsh/` 不入库。
-emil 的 `apple-design` 会**遮蔽** `~/.dsh/skills/apple-design`（另一份 HIG 技能）——本项目以 emil 那份为准（D-22）。
-
-带 `disable-model-invocation: true` 的技能（`tdd`、`triage`、`grill-me` 等）只能由人触发；
-其余可被模型按需加载。技能之间的协作沿用上游写法（用 `skill` 工具调用对方），未做改写。
-
-### Issue tracker
-
-本地 Markdown，文件放在 `.scratch/`。见 [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md)。
-
-### Triage labels
-
-五个规范角色，标签串与角色同名，写在 issue 文件的 `Status:` 行。见 [`docs/agents/triage-labels.md`](docs/agents/triage-labels.md)。
-
-### Domain docs
-
-单上下文：`GLOSSARY.md`（已建立）+ 决策记录沿用 `docs/DECISIONS.md`。见 [`docs/agents/domain.md`](docs/agents/domain.md)。
-
+技能包装在项目级 `.dsh/skills/`（rank 高于 `$DSH_HOME/skills`），来源是 mattpocock/skills 与 emilkowalski/skills。
+**要更新技能、查同步命令、看 `disable-model-invocation` 名单或 issue tracker / triage / domain docs 的约定时**，
+读 [`docs/agents/skills.md`](docs/agents/skills.md)。两条常被问到的：emil 的 `apple-design` 遮蔽用户级同名技能（以 emil 为准，D-22）；
+`prototype` 两库重名，保留 matt 那份。
 
 ---
+## 16. UI/UX 改动的做法（先取证，再改）
 
-## 16. UI/UX 改动的做法（设计取证，强制）
-
-任何视觉或交互改动按五步走，缺一步不算完成。这条流程是 2026-11-12 的三次返工换来的：
-退出动画"感知不到"、按压"像卡住"，都不是调数值能解决的——**先取证，再改**。
-
-1. **量化现状.** 先拿事实：行号、计算样式、截图、录屏、耗时。禁止用"感觉有点…"开题。
-2. **查一手规范 + 竞品.** 至少两个**独立**来源，记链接与日期：
-   - 一手：Apple HIG（用 `developer.apple.com/design/human-interface-guidelines/<page>.md` 的 Markdown 版）、
-     NN/G、平台规范；
-   - 技能：`.dsh/skills` 的 `apple-design`、`emil-design-eng`、`review-animations`（`715c180`）；
-   - 竞品：Apple Music / Spotify / 系统播放器，写清"它在同一位置怎么取舍、我们的场景哪里不同"。
-3. **先给 2–3 个方案.** 每个方案写：层级、控件位置、动效、代价；给出推荐，并写**反例**
-   （什么情况下不选它）。方案没摆出来之前不动代码。
-4. **按 `docs/DESIGN.md` §6 落地.** 数值进 P 表；交互模式变化 → 新增 D 条目；
-   需求变化 → 新增/改 R 条目并等批准。三条线不能混。
-5. **证据.** L1 静态守卫 + L3 人工（截图或 0.25× 录屏）。没有记录 = 未验证。
-
-三条红线：
-
-- **不凭手感调数值**；调了就必须同步 P 表，否则规范与实现脱节。
-- **不为"看起来高级"堆动效**：高频交互默认不加动效（HIG 明说），悬停/键盘路径优先做减法。
-- **不整段照搬竞品**：写清适用条件。竞品解决的是它的问题，不是我们的。
-
-引用格式：结论后面跟来源链接与日期，评审时能点开。设计结论与代码同级，**都要可追溯**。
-
-### 16.1 每条设计结论都必须有来源（强制）
-
-推荐、参数、否决理由，每一个都要至少挂一个来源，并写在结论后面：
-
-| 来源类型 | 写法（必须能点开或能查到） |
-|---|---|
-| 技能 | `emil-design-eng · Buttons must feel responsive` |
-| Apple 规范 | `HIG · Color："Avoid using the same color to mean different things."` |
-| 竞品 | `Apple Music · Now Playing：音量条弱于进度条` |
-
-规则：
-
-- **找不到来源的**标注 `假设（无来源）`，只能作为待验证提案，**不得直接实施**。
-- 给不出来源的"我觉得更好看"不是理由；给得出来源但与本项目冲突（D-21 / D-22）时，以项目约束为准并写明。
-- 来源冲突时的优先级：**Apple 规范 > 技能 > 竞品**；仍冲突就停下来问用户。
-- 引用要具体到条目/章节/原句，**不许写"最佳实践"**这种无法核对的来源。
-- 偏离规范时，必须写成「偏离 + 补偿」：例如"滑块悬停才出现，偏离 HIG「thumb 指示数值」，由填充轨道补偿"。
-- **引用 HIG 必须写明平台章节**：iPadOS / tvOS 的交互结论不能直接套到桌面。反例：用 iPadOS 的「content effects」推出"桌面按钮不该有 hover 底色"，而 HIG · Toolbars 明确写着系统会为工具栏符号按钮提供 hover 外观。
-
+视觉或交互改动走五步：量化现状 → 一手规范 + 竞品 → 2–3 个方案 → 按 `docs/DESIGN.md` §6 落地 → L1 守卫 + L3 证据。
+缺一步不算完成；方案没摆出来之前不动代码。
+每条结论都要挂来源，给不出就标 `假设（无来源）`，只能当待验证提案。
+红线、HIG 取用写法（`…/<page>.md`）、平台章节要求与反例：见 [`docs/agents/design-process.md`](docs/agents/design-process.md)。

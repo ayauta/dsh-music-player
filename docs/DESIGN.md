@@ -55,6 +55,7 @@
 | **R12** | 动效审查以 emilkowalski/skills 的实际文件与章节为依据（高频克制、直接操控、可中断、性能） | Approved | **Implemented** | **Passed**（2026-11-12） | emilkowalski/skills @ `715c180` | 规范落到 §6，测试落到 `TESTING.md` §2.4，首次审查记录 `docs/audits/2026-11-12-motion.md`；审出 7 项缺陷（B22–B28）；已按 §6 修复（工作区，待重启 L3） |
 | **R13** | 播放队列 = 唯一 trackId 的**单一可见播放顺序**：同一曲目不重复；「下一首播放」移动已有条目；随机只重排当前之后；「停止并清空队列」是唯一破坏性队列操作 | Approved | Implemented | Not tested | 已提交 `977a62d`（文档 `88d5551`） | L1 21 例 + L2 真实 mpv 通过；**L3 未验证**（需重启 DSH）。见 `docs/DECISIONS.md` D-14 / D-15 / D-16 |
 | **R14** | 曲目身份：路径用于自动识别已有记录，`trackId` 是持久身份；自动扫描不依据指纹推断文件移动。同一路径重扫沿用原 id；同一路径换内容沿用 id 只更新元数据；不同路径就是不同曲目（内容相同也不合并）；**扫描不推断改名**——旧路径的行标 `missing` 并保留收藏/歌单/覆盖/队列引用；移除来源只停止扫描，不删曲目行，重新添加同一路径恢复原 id 与关联；扫描根不得互相包含（历史重叠只报告）；目录不可读时扫描报错且不把整根曲目标 missing | Approved | Partial | Not tested | 已提交 `cdd60aa`（文档 `59a1e9b`） | 已实现：身份/缺失/来源生命周期/根重叠/扫描安全（L2 19 例）。**未实现**：`track.relocate`（单曲重新定位）、`roots.relocate`（整文件夹搬家）、缺失项的界面呈现与"定位文件"入口——见 `docs/DESIGN.md` §2 与 `docs/CURRENT.md` §5。规则见 `ARCHITECTURE.md` §3、`docs/DECISIONS.md` D-19 / D-20 |
+| **R15** | 「上一首」= **3 秒规则**：播放位置 > 3 秒时按一次**重播当前曲**，再按一次才回上一曲；≤ 3 秒时直接回上一曲。**播放与暂停状态同一套规则**（不做"暂停时直接上一首"的例外） | Approved | Implemented | Not tested | —（待 L3） | 规则明文见本条；实现 `lib/host/player.js` 的 `prev()`；L1 `test/player-transport.test.mjs`「prev restarts the current track after three seconds…」。行业取证（Apple Music / Spotify 均为"点一次重播、再点一次上一曲"，阈值被报告为 3s / 5s 两种；**暂停时的行为无一手来源**）见 `docs/research/2026-11-14-prev-button-convention.md` |
 
 ### 1.1 子项
 
@@ -223,7 +224,7 @@
 ---
 ## 7. 播放面板版式（2026-11-12，Approved）
 
-依据 D-22 与 `AGENTS.md` §16；采用「A · 苹果式」：封面优先、三键传输、工具进 header。
+依据 D-22 与 [`docs/agents/design-process.md`](agents/design-process.md)；采用「A · 苹果式」：封面优先、三键传输、工具进 header。
 竞品调研见 [`docs/audits/2026-11-12-panel.md`](audits/2026-11-12-panel.md)。
 
 | 项 | 值 |
@@ -243,7 +244,7 @@
 
 不做：封面与文字不同缩进、第四条传输键、第二条同重滑轨。
 
-### 7.1 每条参数的来源（对应 §16.1）
+### 7.1 每条参数的来源（对应 `design-process.md` §4）
 
 | 参数 | 来源 |
 |---|---|

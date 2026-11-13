@@ -42,7 +42,7 @@
 | `test/integration/scan.test.mjs` | L2 | ✅ 隔离无声 | 仅临时根；真实 `node:sqlite`；**stub ffprobe**（不启动 mpv、不需要 ffmpeg）；故障注入是 `upsertTrack` / `setMissing` 的包装、`roots` DELETE 触发器与可延迟的探针桩 | 扫描结局守恒与生命周期（C1，8 例）+ 身份与来源生命周期（13 例）：单根守恒、探测失败 → `partial`、写入失败不计入 unchanged、每根独立、全失败 → `error`、sweep 写入失败 → `error` 且索引=已提交状态、重扫覆盖、v1→v2 升级与幂等；同路径重扫 id/收藏/歌单不变、相同内容两条路径两首曲目、改名＝新曲目+旧行 missing、移除来源保留行与引用且重新添加恢复同 id（幂等两轮）、移除来源全有或全无（中途失败回滚）、扫描进行中拒绝移除、仍缺失的文件不被复活、移出曲库的曲目不被重扫复活、目录不可读 → `error` 且全员不标 missing、父子根拒绝/同前缀接受/历史重叠一个文件一行且 `root_id` 不来回转移 |
 | `scripts/bundle-id.mjs` | — | ✅ **只读**（仅 `--write` 写文件） | 默认不联网、不写；`--write` 只改标记行；`--served` 只发回环 GET | Bundle ID 校验、`--served` 宿主字节比对、`--runtime` 运行时比对（见 §2.2） |
 | `test/bundle-id.test.mjs` | L1 | ✅ 安全 | 临时目录（`mkdtemp`） | 指纹一致性 / 标记唯一性 / 换行归一 / `--write` 幂等 / 缺标记与重复标记拒绝 / 运行时值比对（9 例） |
-| `test/client-source.test.mjs` | L1 | ✅ 安全 | 只读 `client.js` | **静态守卫**（无 DOM 渲染器）：`Cover` 不得解引用可为 null 的 `track`；`ErrorBoundary` 必须同时支持 `fallback` 与 `makeFallback`，且所有调用点使用其中之一。3 例 |
+| `test/client-source.test.mjs` | L1 | ✅ 安全 | 只读 `client.js` | **静态守卫**（无 DOM 渲染器）：`Cover` 不得解引用可为 null 的 `track`；`ErrorBoundary` 必须同时支持 `fallback` 与 `makeFallback` 且调用点用其中之一；传输行三键 + 模式在 header；hooks 不得在 early return 之后；**Space 让位于获得焦点的控件**（CUI-01）；**队列读取失败不得渲染成加载中**（CUI-02）。14 例 |
 | `test/guard.test.mjs` | L1 | ✅ 安全 | 无（只起一个本地计数 HTTP 服务） | 证明危险脚本未授权时拒绝，且**目标服务器收到 0 个请求** |
 | `test/support/fixtures.mjs` | L1 支撑 | ✅ 安全 | 写临时目录 | 用 ffmpeg 生成 8s/3s/3s 夹具与封面 |
 | `test/support/host.mjs` | L2 支撑 | ✅ 隔离 | 临时 `DSH_HOME`、临时库 | 自建临时根、强制 `ao=null`、进程内 dispatch、先 dispose 再删目录 |
@@ -207,6 +207,32 @@ fast-check 负责生成、seed 与数组 shrink；该属性是异步且带状态
 - 记录按 §7；任一项不过就写 `Failed`，不得写"基本可用"。
 
 **豁免表**：目前无。新增豁免必须写理由与到期条件。
+
+### 2.5 L1 夹具的能力边界（写用例前必读）
+
+`test/support/player-harness.mjs` 的假引擎不是"一个假的 mpv"，它是**一组可编排的时序**。
+写用例前先查这张表，判断你要验证的事在不在它的表达范围内；不在，就先扩夹具（见本节末尾的规则）。
+
+| 能力 | 用法 | 它能表达什么 |
+|---|---|---|
+| 位置 | `setTimePos(ms)` | mpv 此刻报的位置；`seek` / `load` 会同步它 |
+| **在途读取** | `holdNextTimePos()` → 返回释放函数；`suspendedReads()` | `getProperty` 是**异步**的：这次读跨过一次 seek / 暂停时返回旧值——B35 的成因 |
+| 轮询节奏 | `createPlayerHarness(t, { pollMs })` | 真实 1000ms；测试用 5–200ms（`createPlayer` 的注入点，D-13 纪律） |
+| 命令不被确认 | `failNextWrite` / `failNextPause` | 命令被接受但属性没到 |
+| 播放列表自己漂移 | `moveBeforeNextWrite` / `moveDuringNextWrite` / `corruptNextWrite` / `reportUnknownSeen` | 写尾部期间 mpv 动了或列表形状不对 |
+
+**规则一：替身不得比被测对象更同步**（`AGENTS.md` §9）。夹具同步返回时，所有"读取在途"的竞态
+都会从测试里消失，闭环就在一个不存在的世界里自证——B35 连续三次修错层正是从这里来的。
+要验证"两个 async 步骤交错"，用 `holdNextTimePos()` 把交错**摆出来**，不要用 `await delay()` 去猜。
+
+**规则二：概率性症状要量红率**，不要用一次绿就跑完：
+
+```bash
+npm run test:repeat -- test/player-transport.test.mjs 20    # 打印 n/20 red
+```
+
+**规则三**：夹具表达不了某类竞态时，在用例里写明"这条测不到什么"，不要留一个看起来覆盖了、
+实际上只覆盖同步路径的断言。
 
 ---
 ## 3. 默认拒绝的脚本（Phase 0B-1 起由代码强制）
@@ -440,7 +466,45 @@ npm run smoke -- --library <path> --allow-real-library   # 只读诊断，需显
 | 2026-11-12 | Automated | 工作区（未提交，模式 / 进度 / 传输悬停按 HIG 修正） | L1 | `npm test`（新增模式键守卫 + 传输悬停守卫） | **Passed**：106 tests / 0 fail / 844ms | 脚本 | 守卫：`ModeButton` 不得出现 `data-active`；传输行三键必须同为 `size: 'lg'` 且不得出现 `xl`（HIG：用样式不用尺寸）；hover 不得被改成 `transparent`；**不覆盖**视觉观感（需重启 L3） |
 | 2026-11-12 | **Manual** | `dshm-c517ae41e53e`（重启后的真实宿主；served artifact rev `07613eca9631`） | L3 | 用户重启后查看播放面板：模式四态无底色、进度/音量滑块常显、传输三键同尺寸 44、悬停圆角矩形底、音量标准滑块 | **Passed**：用户确认"功能符合预期" | 用户 | 覆盖视觉与基本交互；**不覆盖**录屏逐帧判读、空队列状态、字体缩放 |
 | 2026-11-12 | Manual（实机） | `dshm-cfd78a28fa9c`（重启后的宿主，端口 63179） | L3 | 用户重启后观察侧栏 | **Failed**：`Minified React error #310`（hooks 在空态 early return 之后，曲目出现时 hook 数量变化） | 用户（截图） | 已修：hooks 上移 + 静态守卫；新 bundle `dshm-7031e31a7568` 待重启复验 |
+| 2026-11-13 | Automated | 工作区（未提交，CUI-01 / CUI-02；审查后修正一轮） | L1 | `npm run check`（`node --check` + `npm test`，两条静态守卫）；审查 agent 另独立跑 `node scripts/bundle-id.mjs` 核对 | **Passed**：108 tests / 0 fail / 821ms；**source id** `dshm-c517ae41e53e` → **`dshm-2a24b8d96206`**，内嵌标记与源码一致 | 脚本 | 守卫：`event.defaultPrevented` 与 `controlOwnsKey` 都排在 Space 之前，`inMusicSurface` 限定音乐上下文；队列读取状态 `ready/failed` 齐备、重读不得回落 pending、失败分支只 `setAttempt` 且无写操作。**不覆盖**真实键盘归属、断连与写操作后的界面表现（需重启 L3） |
+| 2026-11-14 | Automated（实现前，**预期红**） | 工作区（D-24 竖切 1） | L1 | `node --test test/playhead.test.mjs` | **Failed**：`ERR_MODULE_NOT_FOUND … lib/shared/playhead.js` | 脚本 | 证明用例先于实现存在，不是照着实现补写的 |
+| 2026-11-14 | Automated | 工作区（D-24 竖切 1） | L1 | `node --test test/playhead.test.mjs` | **Passed**：10 tests / 0 fail / 102ms | 脚本 | 覆盖：补间推进、暂停不推进、无采样时刻不推进、上界夹取、未知时长不下夹上界、**采样时刻晚于 now 不回退**、非有限时钟、进度分数 0..1、剩余时间地板 0 |
+| 2026-11-14 | Automated（**临时变异，均已还原**） | 工作区（D-24 竖切 1） | L1 | 变异 A：删掉模块的下界夹取（`Math.max(0, nowMs - sampled)`）→ `9 pass / 1 fail`；变异 B：只改模块、不重跑 `--write`（生成区变陈旧）→ 守卫 `1 pass / 1 fail` | **各自 Red** | Agent | 证明缺陷用例与生成区守卫都不是恒真，还原后 `npm run check` 120/120 |
+| 2026-11-14 | Automated | 工作区（D-24；bundle `dshm-df11aeedaff9`） | L1 | `npm run check`（`node --check` ×2 + `npm test`），另跑 `node scripts/inline-playhead.mjs`（verify） | **Passed**：120 tests / 0 fail / 959ms；生成区与 `lib/shared/playhead.js` 逐字符一致；**source id** `dshm-2a24b8d96206` → **`dshm-df11aeedaff9`** | 脚本 | 守卫：生成区一致 + `positionSampledAt` 只出现在生成区。**不覆盖**真实渲染、进度条观感与键盘 seek 手感（需重启 L3） |
+| 2026-11-14 | Automated（**只读取证**） | 工作区（bundle `dshm-df11aeedaff9`）+ 重启后的宿主 | L3 | `node scripts/bundle-id.mjs --served --url http://127.0.0.1:64050` | **Passed**：source id 与 served id 同为 `dshm-df11aeedaff9`，artifact rev `e3f1933f478d` 与宿主一致，served 138 441 B 与源码逐字节相同、trailer 正常；**宿主已是 `0.2.2-rc.3 / 6b729fe`**（上次人工验收在 `rc.1 / c59d10a`） | 脚本 | 只证明宿主会提供这份字节；**不证明**渲染，也不代表 rc.1 上的验收可平移到 rc.3 |
+| 2026-11-14 | Automated（实现前，**预期红**） | 工作区（D-27 竖切 2） | L1 | `node --test test/playhead.test.mjs` | **Failed**：`does not provide an export named 'anchorOf'` | 脚本 | 证明新用例先于新实现存在 |
+| 2026-11-14 | Automated | 工作区（D-27 竖切 2） | L1 | `node --test test/playhead.test.mjs` | **Passed**：19 tests / 0 fail | 脚本 | 覆盖：锚点字段与 `advancing` 判定、补间、暂停、无锚点不推进、上下界夹取、非有限时钟、分数、剩余时间、等待的三条判据（放行 / 粘住 / 时钟回退丢弃）、以及"宿主一次都没采样"与"请求没有可比较时刻"两种退化输入 |
+| 2026-11-14 | Automated（**临时变异，均已还原**） | 工作区（D-27 竖切 2） | L1 | 变异 A：`sampledAt >= requestedAt` 改 `>` → `18 pass / 1 fail`；变异 B：删掉"墙钟回退即丢弃"分支 → `18 pass / 1 fail`；变异 C：组件里写回 `1600`/`900` 阈值 → `client-source` 14 pass / 1 fail | **各自 Red** | Agent | 三条规则都不是恒真；还原后 `npm run check` 130/130 |
+| 2026-11-14 | Automated | 工作区（D-27；bundle `dshm-e03542edadba`） | L1 | `npm run check`（`node --check` ×2 + `npm test`）+ `node scripts/inline-playhead.mjs`（verify） | **Passed**：130 tests / 0 fail；生成区与模块逐字符一致；**source id** `dshm-df11aeedaff9` → **`dshm-e03542edadba`** | 脚本 | 守卫：生成区一致、`positionSampledAt` 只在生成区、`ProgressBar` 必须走 `resolveSeek` 且旧阈值不得复现。**不覆盖**真实渲染与手感（需重启 L3） |
+| 2026-11-14 | Automated（**紧闭环，实现前**） | 工作区（B30） | L1 | `node --test test/player-transport.test.mjs`（新增「the first press on a cold engine…」，用 `stored` 重放重启后的恢复态 + 空引擎） | **Failed**：`there is no file to pause`——`actual: [{name:'pause', args:[true]}]`，即第一按被解析成暂停 | 脚本 | 复现用户报告的"重启后第一次点播放没反应"；同一命令、同一次运行里另一例（已加载时仍应暂停）通过，说明闭环能分辨两种情形 |
+| 2026-11-14 | Automated | 工作区（B30 修后） | L1 | `node --test test/player-transport.test.mjs` | **Passed**：10 tests / 0 fail | 脚本 | 断言：不发 `pause`、发出 `load`、起点 1500ms（恢复位置）、快照 `playing: true` / `paused: false` |
+| 2026-11-14 | Automated（实现前，**预期红**） | 工作区（B31） | L1 | `node --test test/playhead.test.mjs` | **Failed**：`does not provide an export named 'nextAnchor'` | 脚本 | 5 例重锚定用例先于实现存在 |
+| 2026-11-14 | Automated（**临时变异，均已还原**） | 工作区（B30 / B31） | L1 | 变异 A：`toggle()` 去掉 `currentFile === null` 分支 → `9 pass / 1 fail`；变异 B：`nextAnchor` 一律返回新锚点 → `22 pass / 2 fail` | **各自 Red** | Agent | B30 与"锚点复用"两条规则都不是恒真 |
+| 2026-11-14 | Automated（实现前，**预期红**） | 工作区（D-28） | L1 | `node --test test/client-source.test.mjs`（把「全局 Space 让位」守卫换成「客户端不绑键」） | **Failed**：`no document-level key listener`（当时 `attachKeyboard` 仍在） | 脚本 | 守卫先写、代码后删：证明它盯的是真存在的绑定 |
+| 2026-11-14 | Automated | 工作区（D-28；bundle `dshm-fe6cba61dd8e`） | L1 | `npm run check` + `node scripts/inline-playhead.mjs`（verify） | **Passed**：137 tests / 0 fail；生成区一致；**source id** `dshm-e03542edadba` → **`dshm-fe6cba61dd8e`** | 脚本 | 守卫：不得出现 `addEventListener('keydown'`（除 Escape）、`role: 'slider'`、`tabIndex`、任何动作键判定；`positionSampledAt` 只在生成区。**不覆盖**真实键盘行为与观感（需重启 L3） |
+| 2026-11-14 | **Manual** | `dshm-fe6cba61dd8e`（重启后的真实宿主 `rc.3 / 6b729fe`） | L3 | 用户重启后测试六条判据：重启后首按是否出声、键位是否已撤、seek 是否回弹、暂停后显示是否自己爬、面板可开合、进度条连续性 | **Passed（基本正常）**：用户确认"基本正常"——B30 首按即出声、键盘动作已消失、seek 不回弹；**除外**：暂停后进度条仍抖动（另立 B32） | 用户 | 覆盖 B30 / D-28 / B31 的行为与基本观感；**不覆盖**逐帧判读、rc.3 上其它界面项、音量与队列面板 |
+| 2026-11-14 | Automated（**只读取证**） | 运行中的宿主（端口 59917） | — | `POST /music/api` 的 `player.state` 每 150ms 一次 × 40（6s）；再比对一次 `status.player` 与 `player.state` | **Passed（排除宿主）**：暂停状态下 `positionMs` 恒为 **101764**（min=max，spread 0ms，distinct 1），`playing:false`、`paused:true`、`engineStatus:running`，`positionSampledAt` 每秒照旧推进；`status.player` 与 `player.state` 逐字段一致 | Agent | 只证明**宿主没有在动**；据此把 B32 的范围收窄到客户端 |
+| 2026-11-14 | Automated（实现前，**预期红**） | 工作区（B32） | L1 | `node --test test/playhead.test.mjs` | **Failed**：`does not provide an export named 'nextPaint'` | 脚本 | 8 例"写不写"用例先于实现存在 |
+| 2026-11-14 | Automated | 工作区（B32） | L1 | `node --test test/playhead.test.mjs` | **Passed**：32 tests / 0 fail | 脚本 | 关键例：**10 秒暂停（600 帧）只允许 1 次绘制**，而旧行为是 1200 次；另覆盖首帧必写、分数变化必写、标签变化必写、亚像素噪声不写、非有限分数按 0、播放时最后一帧的值必须落地 |
+| 2026-11-14 | Automated（实现前，**预期红**） | 工作区（B32） | L1 | `node --test test/client-source.test.mjs`（新增「the progress bar paints only when the value changes」） | **Failed**：`the bubble text is assigned only through the guarded path`——抓到 hover 时对气泡的第二次写入 | 脚本 | 守卫先写、代码后改：证明它盯的是真实存在的双写者 |
+| 2026-11-14 | Automated（**临时变异，均已还原**） | 工作区（B32） | L1 | 变异 A：`nextPaint` 一律 `write: true` → `29 pass / 3 fail`；变异 B：`if (next.write === false) return` 改成 `if (false) return`（先 diff 确认变异已落到文件）→ `client-source` 15 pass / 1 fail | **各自 Red** | Agent | 纯函数语义与"组件真的用了它"两面都钉住；还原后 `npm run check` 146/146 |
+| 2026-11-14 | Automated | 工作区（B32；bundle `dshm-cc5effbf6882`） | L1 | `npm run check` + `node scripts/inline-playhead.mjs`（verify） | **Passed**：146 tests / 0 fail；生成区与模块一致；**source id** `dshm-fe6cba61dd8e` → **`dshm-cc5effbf6882`** | 脚本 | 守卫：`nextPaint(paintedRef.current` 必须出现、`write:false` 必须直接返回、写入值必须被记住。**不覆盖**真实渲染（需重启 L3） |
+| 2026-11-14 | **Manual** | `dshm-cc5effbf6882`（重启后的真实宿主 `rc.3 / 6b729fe`） | L3 | 用户按四条判据复验：暂停后静止 / 播放平滑 / 拖动气泡 / 拖完不回弹 | **Failed**（②③④ 通过，① 不过）：暂停后条仍会动一下（→ B33） | 用户 | 覆盖 B32 的 ②③④；① 交由 B33 |
+| 2026-11-14 | Automated（**紧闭环，实现前**） | 工作区（B33） | L1 | `node --test test/player-transport.test.mjs`（新增「pausing … stamps where it stopped」，用 41.6s 旧轮询 + 42.5s 引擎真值 + 客户端已画 ~42.3s 重放；夹具引擎新增可设 `time-pos`） | **Failed**：`the pause snapshot carries where mpv actually stopped, not the last polled position`——快照停在 41 600 | 脚本 | 复现"客户端画到真值、却被旧快照按回去"的完整链条；断言同时覆盖"等于引擎真值"与"不落后于已画值" |
+| 2026-11-14 | Automated | 工作区（B33 修后） | L1 | `node --test test/player-transport.test.mjs` | **Passed**：11 tests / 0 fail | 脚本 | 另有附带发现：夹具引擎的 `time-pos` 原本恒为 0，改完立刻让既有用例「resuming a paused track continues where it stopped」变红——说明盖章是承重的，旧例只是被不真实的夹具掩盖 |
+| 2026-11-14 | Automated（**临时变异，已还原**） | 工作区（B33） | L1 | 变异：把 `pause()` 的盖章分支改成 `if (false)`（先 diff 确认变异落到文件）→ B33 用例 | **Red**：`10 pass / 1 fail` | Agent | 证明该守卫不是恒真 |
+| 2026-11-14 | Automated | 工作区（B33；宿主改动，客户端 bundle 不变 `dshm-cc5effbf6882`） | L1 | `npm run check` | **Passed**：147 tests / 0 fail | 脚本 | 夹具引擎现在跟随 `seek` / `load` 更新 `time-pos`。**不覆盖**真实 mpv 的暂停时序（需重启 DSH 后 L3） |
+| 2026-11-14 | **Manual** | `dshm-cc5effbf6882` + B33 宿主修复 | L3 | 用户点暂停，反复观察 | **Failed**：仍有**概率性**回缩再前进（→ B34） | 用户 | 概率性说明存在交错，不是算法错 |
+| 2026-11-14 | Automated（**紧闭环，实现前**） | 工作区（B34） | L1 | `node --test test/playhead.test.mjs`（新增 4 例定序，含「a late, older answer must not move the bar backwards」——钉死到达顺序） | **Failed**：`does not provide an export named 'acceptResponse'` | 脚本 | 把概率性竞态钉成确定性输入：①接受首答 ②丢弃更旧 ③丢弃重复 ④回放后绘制序列必须只有 `[100900]` |
+| 2026-11-14 | Automated | 工作区（B34 修后） | L1 | `node --test test/playhead.test.mjs` | **Passed**：36 tests / 0 fail | 脚本 | 定序门与补间/等待/绘制守卫共存 |
+| 2026-11-14 | Automated（**临时变异，均已还原**） | 工作区（B34） | L1 | 变异 A：`acceptResponse` 恒为 `true` → `33 pass / 3 fail`；变异 B：客户端门改成 `if (false)`（先 diff 确认落地）→ `client-source` 16 pass / 1 fail | **各自 Red** | Agent | 纯函数与"组件真的用了它"两面都钉住 |
+| 2026-11-14 | Automated | 工作区（B34；bundle `dshm-016c9bffbb5c`） | L1 | `npm run check` + `node scripts/inline-playhead.mjs`（verify） | **Passed**：152 tests / 0 fail；生成区一致；**source id** `dshm-cc5effbf6882` → **`dshm-016c9bffbb5c`** | 脚本 | 守卫：编号在发出时、判定在 `session.setStatus` 之前。**不覆盖**真实交错频率（需重启 L3 连点验证） |
 
+| 2026-11-14 | **Manual** | `dshm-016c9bffbb5c` + B33/B34 宿主改动 | L3 | 用户连点暂停 | **Failed**：仍会回缩（第三次） | 用户 | 说明前三次修的不是写入者 |
+| 2026-11-14 | Automated（**紧闭环，实现前**） | 工作区（B35） | L1 | `node --test test/player-transport.test.mjs`（夹具新增 `holdNextTimePos()`：挂起下一次 `time-pos` 读取，释放时返回读取**开始**那一刻的值；另新增可注入 `pollMs`） | **Failed**：`the late read must not move the playhead back to 41 600 under a paused track`——`actual: [42500, 41600]` | 脚本 | 复现"读在途跨过暂停"：盖章 42.5s 之后，在途读取把 41.6s 写回去 |
+| 2026-11-14 | Automated（**临时变异，已还原**） | 工作区（B35） | L1 | 先试 `issuedAt >= state.positionSampledAt` → 连跑 5 次里 2 次失败，日志出现 `issuedAt === stamp === …426`（同毫秒并列放行）；改为代数比较后再变异（去掉比较）→ 5/5 全红 | **混红→稳定红** | Agent | 毫秒精度不足以表达"先后"；代数比较才是判据 |
+| 2026-11-14 | Automated | 工作区（B35 修后） | L1 | `node --test test/player-transport.test.mjs` × 10 次 | **Passed**：每次 12 tests / 0 fail | 脚本 | 循环现在双向确定：变异稳定红、修复稳定绿 |
+| 2026-11-14 | Automated | 工作区（B35；宿主改动，客户端 bundle 不变 `dshm-016c9bffbb5c`） | L1 | `npm run check` | **Passed**：153 tests / 0 fail | 脚本 | **不覆盖**真实 mpv 下 `getProperty` 的真实延迟分布（需重启 DSH 后 L3） |
 **关于 2026-10-29 那条 L3 记录（`scripts/playback-test.mjs`）的说明**：
 
 - 该脚本直接打运行中的插件，**副作用**：覆盖真实队列、`prefs.set` 改真实设置、改变当前播放、结束后不恢复（见 §4）。

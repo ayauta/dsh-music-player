@@ -20,6 +20,8 @@
 - 四层验证网与授权门：L1 状态机与客户端守卫、L2 隔离 Host、Smoke、Bundle ID 取证（`18e8cf5`、`208023c`、`34defc6`、`38f4faa`、`3363e2e`、`1253091`）
 - 扫描台账：每个 root 一份 `done/partial/error` + `failed` 计数，异常不留 `running`（`7a72093`）
 
+- `scripts/syntax-check.mjs`（全树 46 个文件）与 `scripts/test-repeat.mjs`（量红率）；`npm run check` 现在是"全量语法检查 + L1"
+
 **Changed**
 - 队列改为单一可见顺序，镜像由 Engine 读回确认（`977a62d`）；「下一首播放」在 shuffle 下按当前曲位置插入（`ff053fb`）
 - 曲库身份按路径沿用：改名＝新曲目 + 旧行 `missing`；移除来源保留行与引用，重新添加恢复原 id（`cdd60aa`）
@@ -28,9 +30,24 @@
 - B1 队列视图渲染空白（`73315dc`）、B10（`ff053fb`）、B15（`3ca1ea9`）、B17（`977a62d`）、B19（`8e9c6c7`）、B20 暂停回包滞后（`feef92a`）
 - 动效规范（DESIGN §6）、B22–B28：面板补退出动画、曲线与时长分工、去掉 height / box-shadow 过渡、删死代码、hover 门控（工作区，待重启 L3）；同批修掉实机暴露的 React #310（hooks 顺序）；退出 160ms、按按下/松开拆分、播放图标乐观翻转
 - 播放面板版式（DESIGN §7）：删除可见「正在播放」、传输行回归三键、模式移入 header、统一 16px 边距、封面圆角 10、音量按 HIG Sliders 还原为标准滑块；模式键去掉状态背景；进度滑块改为常显；传输三键统一 44×44 圆角矩形（层级只靠字形 18/20/18），悬停底色为 8% 圆角矩形（工作区，bundle `dshm-c517ae41e53e`）
+- 交互可靠性 CUI-01 / CUI-02：空格先看 `defaultPrevented`，再让位于获得焦点的控件（`button` / `input` / `[role=option]` / `[role=slider]` 等），音乐表面外只在没有焦点时接管；队列面板拆成 `pending / ready / failed` 读取状态，重读保留旧行、失败给只读重试（只重发 `queue.list`），清空/移除不会因读取失败被自动触发（bundle `dshm-2a24b8d96206`，待重启 L3）
+- 播放头算术抽出为纯函数模块 `lib/shared/playhead.js`（`estimatePositionMs` / `progressFraction` / `remainingMs`），由 `scripts/inline-playhead.mjs` 生成进 `client.js` 标记区；**修掉负位置缺陷**（原 `estimateMs` 只夹上界，采样时刻晚于当前时钟时位置会变成负数）；`RemainingText` 与进度分数改用同一实现（bundle `dshm-df11aeedaff9`，待重启 L3）
+- 定位（seek）的"防回弹"改为按**采样时刻**判新旧（`resolveSeek`），替掉 `1600ms / 900ms` 两个阈值——旧规则会在它本该遮住的那张旧快照上提前放行；补间锚点从 `Date.now()` 换成 `performance.now()`（`anchorOf`，按快照对象身份缓存），NTP 对时/休眠恢复不再让进度条跃动；`isAdvancing` 收紧为两个标志齐备（bundle `dshm-e03542edadba`，待重启 L3）
+- **B30 重启后第一次点播放没反应**：`player.toggle()` 只读 mpv 的 `pause`，而新进程默认 `no` 且没有文件打开，第一按被解析成"暂停空气"；改为"没有文件打开就一律 `resume()`"（D-29）。L1 用恢复态紧闭环复现并守住"已加载时的暂停不受影响"
+- **B31 大播放器进度条一卡一卡**：补间锚点按读到的对象身份缓存，`status` 每次读回都是新对象（1 Hz 轮询 + 每条命令后补读），同一张采样被重复读到就重置锚点 → 显示位置回退再爬；改为 `nextAnchor` 按**采样身份**复用锚点（D-27 补记）
+- **D-28 撤掉插件全部键盘绑定**：删除 D-23 遗留的 `attachKeyboard` / `KEY_OWNERS` / `controlOwnsKey` / `inMusicSurface` 与 `ctx.effect` 注册，以及进度条 `←/→/Home/End`、音量条 `←/→`、队列行 `Enter/Space`、库行 `Enter` 与 `ContextMenu / Shift+F10`、搜索框 `Esc`；`role="slider"` 降级为 `progressbar` / `meter`、行元素去掉 `tabIndex`。保留浏览器原生控件行为与"Esc 关闭已打开表面"（bundle `dshm-fe6cba61dd8e`，待重启 L3）
+- **B32 暂停后进度条仍抖动**：`paint()` 每帧无条件写 `--p` 与气泡文本（120 次/秒），`--p` 驱动的 `left: calc()` / `scaleX()` 每次失效都重新取整，静止时表现为约 1px 微动；改为 `nextPaint` 变化判定（分数按 1e-5 量化），并删掉 hover 时对气泡的第二次写入（D-30；bundle `dshm-cc5effbf6882`，待重启 L3）
+- **B33 暂停后进度条回缩一次**：`pause()` 没有在暂停确认后重新盖章，`positionMs` 仍是上一次 1 Hz 轮询的旧值；客户端已经插值画到真实位置，却被这张旧快照按回去，下一次轮询再前跳。改为暂停确认后读一次 `time-pos` 写回 `positionMs` / `positionSampledAt`（D-31；**宿主侧改动，需重启 DSH**）
+
+- **B34 暂停后"有概率"回缩一下再前进**：客户端两条 `status` 请求源没有定序，命令在宿主侧 await 淡出约 200ms，点击前发出的轮询可以后到并把旧快照盖在暂停快照上——锚点回到旧位置、`advancing` 重新为真。改为请求**发出时编号**、更旧的答案一律丢弃（`acceptResponse`，D-32；bundle `dshm-016c9bffbb5c`，待重启 L3）
+
+- **B35 暂停后回缩（真凶）**：1 Hz 轮询的 `time-pos` 读取会跨过一次暂停/seek，返回跨越**之前**的位置却被打上**之后**的时间戳；客户端只能读成"条退回去了"。改为 `state.positionMs` 访问器 + 写入代数，轮询读回来若代数已变则丢弃（D-33；**宿主侧改动，需重启 DSH**）
 
 **Docs**
+- 「上一首」3 秒规则升为 `docs/DESIGN.md` **R15**（Approved：播放与暂停同一套规则；取证 `docs/research/2026-11-14-prev-button-convention.md`）；`AGENTS.md` §15 移出为 `docs/agents/skills.md`（AGENTS 333 → 281 行）
 - 文档治理与验证记录（`16bcd45`、`94ece94`、`59a1e9b`、`2473b79` 等）
+- `AGENTS.md` **352 → 303 行**：§16 / §16.1 正文移入 `docs/agents/design-process.md`（含 HIG `…/<page>.md` 的固定取用写法与"引用必带平台章节"），AGENTS 只留 4 行指针；§14 由 13 条复述压成"一句话 + 章节指针"，只保留没有上文归属的一条
+- 播放头架构调研笔记 `docs/research/2026-11-13-playhead-architecture.md`（五个媒体 UI 库 + 四套内核 + 服务端观察端的取证），以及据此立的 D-24（抽纯函数模块）/ D-25（抄架构不抄代码）/ D-26（依赖引入按"谁拥有这块逻辑"判，不按行数判）
 
 ---
 ## [1.7.0] — 2026-10-30 · `b8dc624`
@@ -40,6 +57,8 @@
 **Added**
 - 播放面板新增音量行：扬声器图标（可切静音，图标随状态切换）+ 4px 滑杆（滑块常显），
   对接 `player.volume` / `player.mute`。
+
+- `scripts/syntax-check.mjs`（全树 46 个文件）与 `scripts/test-repeat.mjs`（量红率）；`npm run check` 现在是"全量语法检查 + L1"
 
 **Changed**
 - 按压反馈改为"按下即缩、松开即回"：图标键 `scale(.94)`（90ms 进 / 130ms 出 + 12% tint）、
@@ -61,6 +80,8 @@
 
 把队列从播放面板移出，并去掉面板的第二个"屏"。
 
+- `scripts/syntax-check.mjs`（全树 46 个文件）与 `scripts/test-repeat.mjs`（量红率）；`npm run check` 现在是"全量语法检查 + L1"
+
 **Changed**
 - 音乐库新增「播放队列」一栏（`lib.queue`），数据来自一次 `queue.list`；
   支持列表、清空待播放、拖动排序、逐条移除。
@@ -78,6 +99,8 @@
 
 ## [1.5.0] — 2026-10-24 · `60b67e9`
 
+- `scripts/syntax-check.mjs`（全树 46 个文件）与 `scripts/test-repeat.mjs`（量红率）；`npm run check` 现在是"全量语法检查 + L1"
+
 **Changed**
 - 队列改为面板内的独立一屏（`screen: 'now' | 'queue'`），点右上队列按钮整块切换。
 - 顺序播放图标改为自绘「三行 + 向下箭头」，与「播放队列」的列表音符图标区分。
@@ -91,6 +114,8 @@
 ---
 
 ## [1.4.0] — 2026-10-23 · `f400af8`
+
+- `scripts/syntax-check.mjs`（全树 46 个文件）与 `scripts/test-repeat.mjs`（量红率）；`npm run check` 现在是"全量语法检查 + L1"
 
 **Changed**
 - 迷你行改 full-bleed（`margin: 0 -12px`、圆角 0）——后被 v1.7 撤销。
@@ -114,6 +139,8 @@
 - 播放器 / 音乐库 / 设置三个 slot cell 各加一层 ErrorBoundary。
 - 打开面板时的抖动：位置从 `useEffect` 里测量改到 render 期间测量，首帧即到位。
 
+- `scripts/syntax-check.mjs`（全树 46 个文件）与 `scripts/test-repeat.mjs`（量红率）；`npm run check` 现在是"全量语法检查 + L1"
+
 **Changed**
 - 面板按 Apple Music 重排：`[⌄] 正在播放 [⋯]` + 满宽封面 + 标题/艺术家 + 进度 + 五键传输行；
   面板宽 340 → 300，封面 176 → 满宽；去掉歌词入口、规格 chips、音量条与底部工具行；
@@ -122,6 +149,8 @@
 ---
 
 ## [1.2.0] — 2026-10-20 · `87be04d`（版本号提交 `b3aa1f0`）
+
+- `scripts/syntax-check.mjs`（全树 46 个文件）与 `scripts/test-repeat.mjs`（量红率）；`npm run check` 现在是"全量语法检查 + L1"
 
 **Changed**
 - 迷你播放器去掉卡片化，改为与侧栏行同参数的一行（无边框、无底色、7px 圆角、7% hover tint）。
@@ -150,6 +179,8 @@
 - 库内设置页（与 `settings.section` 同一组件，五个分区）。
 - 统一声级表：Display 21/600、Title 13.5/600、Row 13/500、Sub 12/400、Caption 11/600；
   字体栈 SF → Segoe UI Variable → PingFang SC → 微软雅黑；数字 `tabular-nums`。
+
+- `scripts/syntax-check.mjs`（全树 46 个文件）与 `scripts/test-repeat.mjs`（量红率）；`npm run check` 现在是"全量语法检查 + L1"
 
 **Changed**
 - 传输控件改为实心几何字形；其余图标整套换成 Lucide（ISC，见 `NOTICE.md`）。
