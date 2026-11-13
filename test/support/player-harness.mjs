@@ -42,6 +42,7 @@ export function createFakeEngine(initial = {}) {
     eofReached: false,
     idleActive: false,
     durationMs: null,
+    timePosMs: 0,
     pause: false,
     currentFile: null,
     ...engineState,
@@ -51,6 +52,8 @@ export function createFakeEngine(initial = {}) {
   let pos = 0
   let pendingFailure = failRewrite
   let pendingPauseFailure = null
+  let heldRead = null
+  let suspendedReads = 0
   let pendingCorruption = null
   let ghostSeen = false
   let moveBeforeWrite = false
@@ -100,6 +103,21 @@ export function createFakeEngine(initial = {}) {
     moveDuringNextWrite() { moveDuringWrite = true },
     /** The next tail write reports a failure and changes nothing. */
     failNextWrite(reason = 'timeout') { pendingFailure = reason },
+    /** Move the position mpv would report for `time-pos`. */
+    setTimePos(ms) { state.timePosMs = ms },
+    /**
+     * Hold the next `time-pos` read open. It answers with the value that was
+     * current when the read *started*, and only when the caller releases it —
+     * the shape of an I/O read that straddles a seek or a pause.
+     */
+    holdNextTimePos() {
+      let release
+      const promise = new Promise((done) => { release = done })
+      heldRead = { promise }
+      return () => { heldRead = null; release() }
+    },
+    /** How many held reads are still suspended. */
+    suspendedReads: () => suspendedReads,
     /** The next pause command is acknowledged but never confirmed. */
     failNextPause(reason = 'timeout') { pendingPauseFailure = reason },
     /** The next write lands, but the playlist ends up in the wrong shape. */
@@ -126,7 +144,8 @@ export function createFakeEngine(initial = {}) {
       state.pause = want
       return { ok: true, reason: 'ok', paused: state.pause }
     },
-    async seek(ms) { record('seek', [ms]); return true },
+    // mpv moves its own 	ime-pos on a seek, and the player reads it back when it pauses.
+    async seek(ms) { record('seek', [ms]); state.timePosMs = ms; return true },
     async command(...args) {
       record('command', args)
       if (args[0] === 'stop') {
@@ -139,7 +158,21 @@ export function createFakeEngine(initial = {}) {
     async getProperty(name) {
       record('getProperty', [name])
       if (name === 'duration') return state.durationMs === null ? null : state.durationMs / 1000
-      if (name === 'time-pos') return 0
+      if (name === 'time-pos') {
+        // The value mpv would report *right now*; a held read keeps answering
+        // with it even after the state has moved on — that is how a real read
+        // that was in flight during a pause behaves.
+        const value = state.timePosMs / 1000
+        if (heldRead !== null) {
+          const { promise, release } = heldRead
+          heldRead = null
+          suspendedReads += 1
+          await promise
+          suspendedReads -= 1
+          return value
+        }
+        return value
+      }
       if (name === 'playlist-pos') return pos
       if (name === 'playlist-count') return playlist.length
       return null
@@ -153,6 +186,7 @@ export function createFakeEngine(initial = {}) {
       playlist = list.slice()
       pos = Math.min(Math.max(0, index), list.length - 1)
       state.idleActive = false
+      state.timePosMs = startMs
       state.pause = false
       sync()
       return { ok: true, reason: 'ok', at: pos, seen: currentPath(), pos, count: playlist.length, currentFile: currentPath() }
@@ -274,6 +308,7 @@ export async function createPlayerHarness(t, options = {}) {
     getPrefs: () => db.getState('prefs') ?? {},
     delay: () => Promise.resolve(),
     random: options.random ?? Math.random,
+    pollMs: options.pollMs,
   })
 
   if (options.init !== false) await player.init()

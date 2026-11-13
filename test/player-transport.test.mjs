@@ -17,6 +17,16 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { createPlayerHarness } from './support/player-harness.mjs'
+import { anchorOf, positionOf } from '../lib/shared/playhead.js'
+
+/** Poll a predicate for up to a second; the loop must stay fast on success. */
+async function waitFor(predicate, timeoutMs = 1000) {
+  const started = Date.now()
+  while (!predicate()) {
+    if (Date.now() - started > timeoutMs) throw new Error('waitFor timed out')
+    await new Promise((done) => setTimeout(done, 1))
+  }
+}
 
 test('an empty queue is inert', async (t) => {
   const h = await createPlayerHarness(t)
@@ -134,4 +144,123 @@ test('DIAGNOSTIC (known behaviour, B11): repeat-one leaves the old queue tail in
   assert.deepEqual(h.engine.playlist(), [h.pathOf('a'), h.pathOf('b'), h.pathOf('c')],
     'mpv still holds the old tail')
   assert.equal(h.snap().queue.length, 3, 'the user-visible queue is untouched')
+})
+
+/**
+ * B30: after a restart, the first press did nothing and the second one played.
+ *
+ * A freshly spawned mpv reports `pause: no` with nothing open (`engine.js` starts
+ * from `pause: false`, `currentFile: null`), so "not paused" never meant "this is
+ * playing". `toggle()` read that flag alone: the first press resolved to *pause*
+ * (a no-op on an empty mpv), and only the second press — now paused — fell
+ * through to `resume()`, which loads the file.
+ *
+ * The restored queue here is exactly what `init()` rebuilds from `app_state`.
+ */
+test('the first press on a cold engine starts playback instead of pausing (B30)', async (t) => {
+  const h = await createPlayerHarness(t, {
+    stored: {
+      player: {
+        queue: ['a', 'b', 'c'],
+        cursorId: 'b',
+        mode: 'sequence',
+        volume: 85,
+        muted: false,
+        positionMs: 1500,
+      },
+    },
+    engineState: { pause: false, currentFile: null },
+  })
+  assert.equal(h.snap().trackId, 'b', 'the restored queue puts b at the cursor')
+
+  await h.player.toggle()
+
+  assert.deepEqual(h.engine.of('pause'), [], 'there is no file to pause')
+  assert.deepEqual(h.engine.loadedFiles(), [h.pathOf('b'), h.pathOf('c')],
+    'the first press hands the file to mpv at the restored position')
+  assert.equal(h.engine.of('load').at(-1).args[2], 1500, 'and it resumes where the session left off')
+  const snap = h.snap()
+  assert.equal(snap.playing, true, 'the snapshot agrees that it is playing')
+  assert.equal(snap.paused, false)
+})
+
+test('pausing while a file is genuinely loaded pauses it, and stamps where it stopped (B33)', async (t) => {
+  const h = await createPlayerHarness(t)
+  await h.player.playQueue(['a', 'b', 'c'], 0)
+
+  // Reproduce the real cadence: the host last polled at 41.6 s, the engine has
+  // since reached 42.5 s, and the user presses pause in between. The client has
+  // already painted up to ~42.3 s by interpolating from that poll.
+  await h.player.seek(41_600)
+  h.engine.setTimePos(42_500)
+  const before = h.snap()
+  const painted = positionOf(anchorOf(before, 0), 700)
+
+  await h.player.pause()
+
+  const after = h.snap()
+  assert.deepEqual(h.engine.of('pause').map((call) => call.args[0]), [true], 'the engine was asked to pause')
+  assert.equal(after.positionMs, 42_500,
+    'the pause snapshot carries where mpv actually stopped, not the last polled position')
+  assert.ok(after.positionSampledAt >= before.positionSampledAt, 'and the sample is freshly stamped')
+  assert.ok(after.positionMs >= painted - 1,
+    `the bar must not rip backwards when pause lands (painted ${Math.round(painted)}, froze at ${after.positionMs})`)
+})
+
+/**
+ * B35: the rip that survived three fixes.
+ *
+ * The 1 Hz poll reads `time-pos` and then writes it. The read takes time: if it
+ * was issued *before* the pause stamped its position, it resolves *after* — and
+ * writes a smaller position with a **newer** `positionSampledAt`. Every client
+ * then re-anchors on that older position (the stamp says "fresh", the value says
+ * "before the pause"), the bar rips backwards, and the next poll rips it forward.
+ * Whether it happens depends on a poll being in flight when you press pause —
+ * which is exactly why it looked probabilistic.
+ *
+ * The old fake engine resolved `getProperty` synchronously, so this race could
+ * not exist in a test. It can now.
+ */
+test('a poll that was already reading must not overwrite the pause stamp (B35)', async (t) => {
+  // A slow poll so the released read's write is not immediately corrected by the next one.
+  const h = await createPlayerHarness(t, { pollMs: 200 })
+  await h.player.playQueue(['a', 'b', 'c'], 0)
+  h.engine.setTimePos(41_600)
+
+  // The poll starts reading now and will answer with 41.6 s whenever we let it.
+  const release = h.engine.holdNextTimePos()
+  await waitFor(() => h.engine.suspendedReads() === 1)
+
+  // mpv moves on, the user pauses, the host stamps where it really stopped.
+  h.engine.setTimePos(42_500)
+  await h.player.pause()
+  assert.equal(h.snap().positionMs, 42_500, 'the pause stamped the real position')
+
+  // Now the late read lands, carrying the pre-pause value. Watch the state for
+  // long enough to cover a further poll: the position must never regress.
+  release()
+  const seen = new Set()
+  const watchUntil = Date.now() + 250
+  while (Date.now() < watchUntil) {
+    seen.add(h.snap().positionMs)
+    await new Promise((done) => setTimeout(done, 2))
+  }
+
+  assert.deepEqual([...seen], [42_500],
+    'the late read must not move the playhead back to 41 600 under a paused track')
+})
+test('toggling while a file is genuinely loaded still pauses (B30 must not break it)', async (t) => {
+  const h = await createPlayerHarness(t)
+  await h.player.playQueue(['a', 'b', 'c'], 0)
+  const loadsAfterQueue = h.engine.of('load').length
+
+  await h.player.toggle()
+
+  assert.deepEqual(h.engine.of('pause').map((call) => call.args[0]), [true], 'a loaded, playing file is paused')
+  assert.equal(h.snap().paused, true)
+
+  await h.player.toggle()
+  assert.deepEqual(h.engine.of('pause').map((call) => call.args[0]), [true, false],
+    'and the next press resumes it in place')
+  assert.equal(h.engine.of('load').length, loadsAfterQueue, 'resuming an open file does not reload it')
 })
