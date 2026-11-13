@@ -101,8 +101,8 @@ test('the queue view plays the row that was clicked, without replacing the queue
     'the queue view must never hand a track list back to the host')
   assert.ok(!panel.includes('library.list'),
     'and must not read the library for its rows')
-  assert.ok(/onKeyDown: \(event\) => \{[\s\S]{0,200}?event\.key === 'Enter'/.test(panel),
-    'the row is keyboard operable')
+  assert.ok(!panel.includes('onKeyDown'),
+    'D-28: the queue row binds no keys of its own — the plugin ships no shortcuts')
   assert.ok(!/h\('button'[^)]*h\('button'/.test(panel),
     'no button is nested inside another button')
 })
@@ -143,6 +143,117 @@ test('the transport row stays three keys and mode lives in the header (DESIGN §
   const header = sliceBetween(source, "className: 'dshm-pop-head'", "className: 'dshm-pop-body'")
   assert.ok(header.includes('ModeButton'), 'the header must own the four-state mode control')
   assert.ok(!header.includes('dshm-pop-title'), 'the visible panel title is gone; aria-label carries the name')
+})
+
+/**
+ * D-28: the plugin binds no keys. D-23 deleted the document-level Space /
+ * Shift+←/→ takeover; the in-row Enter/Space handlers, the progress and volume
+ * arrow keys, and the search-box Escape all went with D-28.
+ *
+ * What is allowed to remain is the *platform's* behaviour: `<button>`, `<input>`
+ * and `<select>` keep Tab/Enter/Space from the browser, and Escape still closes
+ * an open surface (the dialog convention the host uses, and an L3 criterion).
+ * Those are not bindings this file adds.
+ */
+test('the client binds no keys of its own (D-28)', () => {
+  const source = readFileSync(clientPath, 'utf8')
+
+  // Document-level listeners survive only to dismiss a surface on Escape.
+  const listeners = [...source.matchAll(/addEventListener\('keydown'/g)].map((m) => m.index)
+  for (const at of listeners) {
+    const handler = source.slice(Math.max(0, at - 400), at)
+    assert.match(handler, /'Escape'/, 'a document-level key listener may only exist to handle Escape')
+  }
+  for (const gone of ['KEY_OWNERS', 'controlOwnsKey', 'inMusicSurface', 'attachKeyboard']) {
+    assert.ok(!source.includes(gone), `${gone} is dead code after D-28`)
+  }
+  assert.deepEqual(
+    source.match(/role: 'slider'/g) ?? [],
+    [],
+    'a role="slider" that ignores arrow keys is a lie — the native range control is the way back',
+  )
+  assert.deepEqual(
+    source.match(/tabIndex/g) ?? [],
+    [],
+    'no div is made focusable; nothing would answer the keys it invites',
+  )
+  // The survivors, spelled out so the rule cannot drift by accident.
+  const escapes = source.match(/'Escape'/g) ?? []
+  assert.equal(escapes.length, 3, 'Escape may only close an open surface (popover, menu, dialog)')
+  assert.ok(!/event\.key === '(Enter|Home|End|ContextMenu|F10|ArrowLeft|ArrowRight)'/.test(source),
+    'no action key anywhere in the client')
+})
+
+test('the queue panel keeps a failed read apart from loading (CUI-02)', () => {
+  const source = readFileSync(clientPath, 'utf8')
+  const panel = sliceBetween(source, 'function QueuePanel(', 'function LyricsPanel(')
+  assert.match(panel, /setReadState\('failed'\)/, 'a rejected read ends as failed')
+  assert.match(panel, /setReadState\('ready'\)/, 'a resolved read ends as ready')
+  assert.match(panel, /setReadState\(\(prev\) => \(prev === 'ready'/,
+    'a re-read keeps the rows on screen; only an empty panel may show loading')
+  assert.ok(panel.includes("t('queue.failed')"), 'the failure shows as itself, not as loading')
+  const failed = panel.slice(panel.indexOf("if (readState === 'failed')"), panel.indexOf("if (readState === 'pending')"))
+  assert.ok(failed.includes('setAttempt'), 'retrying only bumps state')
+  assert.ok(!/command\(|queue\.(clear|remove|move|enqueue|play)/.test(failed),
+    'a failed read must never replay a write op')
+  assert.ok(!panel.includes('rows.length === 0'), 'an empty row list is no longer the loading test')
+})
+
+/**
+ * D-27: the latch that stops a seek from snapping back used to be two duration
+ * thresholds (`age < 1600`, `|host - pending| > 900`). Both were proxies for
+ * "is this snapshot older than my request?", and the 900ms one could release the
+ * latch early on the very snapshot it existed to hide. The rule now lives in the
+ * playhead module; this guard keeps the components from re-growing their own.
+ */
+test('the seek latch is judged by sample time, not by a duration threshold (D-27)', () => {
+  const source = readFileSync(clientPath, 'utf8')
+  const bar = sliceBetween(source, 'function ProgressBar(', 'function VolumeBar(')
+
+  assert.match(bar, /resolveSeek\(pendingRef\.current, player, Date\.now\(\)\)/,
+    'the latch decision must come from the playhead module')
+  assert.match(bar, /pendingRef\.current = latched\.pending/,
+    'the release must be written back, otherwise the request never clears')
+  assert.ok(!/\b(1600|900)\b/.test(bar), 'the old duration thresholds must not come back')
+  assert.match(bar, /fractionOf\(anchorFor\(player\), performance\.now\(\)\)/,
+    'the painted fraction is interpolated on the monotonic clock')
+})
+
+/**
+ * B32: the bar wrote `--p` and the bubble's text on every animation frame, even
+ * when neither had changed — 120 DOM writes a second for a paused track. The
+ * decision now lives in `nextPaint` (tested in `playhead.test.mjs`); this pins
+ * that the component actually uses it and honours its `write: false`.
+ */
+test('the progress bar paints only when the value changes (B32)', () => {
+  const source = readFileSync(clientPath, 'utf8')
+  const bar = sliceBetween(source, 'function ProgressBar(', 'function VolumeBar(')
+
+  assert.match(bar, /nextPaint\(paintedRef\.current,/, 'the paint decision must come from the playhead module')
+  assert.match(bar, /if \(next\.write === false\) return/, 'a skipped frame must not touch the DOM')
+  assert.match(bar, /paintedRef\.current = \{ fraction: next\.fraction, label: next\.label \}/,
+    'the written values must be remembered, otherwise every frame looks new')
+  assert.ok(!/bubbleRef\.current\.textContent = formatTime/.test(bar),
+    'the bubble text is assigned only through the guarded path')
+})
+
+/**
+ * B34: status answers arrive out of order (1 Hz poll vs post-command refresh),
+ * and applying an older one re-anchors the playhead on a stale position — the
+ * "sometimes" half of the pause rip. The gate lives in `acceptResponse`
+ * (`playhead.test.mjs`); this pins that the client numbers requests on issue and
+ * honours the verdict.
+ */
+test('a late status answer cannot overwrite a newer one (B34)', () => {
+  const source = readFileSync(clientPath, 'utf8')
+  const fn = sliceBetween(source, 'async function refreshStatus()', 'async function command(')
+
+  assert.match(fn, /const requestId = statusSeq \+= 1/, 'the request is numbered when it is issued')
+  assert.match(fn, /if \(!acceptResponse\(lastAppliedStatusId, requestId\)\) return null/,
+    'an answer older than the applied one is dropped')
+  assert.match(fn, /lastAppliedStatusId = requestId/, 'the applied number is remembered')
+  assert.ok(fn.indexOf('acceptResponse') < fn.indexOf('session.setStatus'),
+    'the verdict comes before the session is touched')
 })
 
 test('no component calls a hook after an early return (React #310)', () => {
