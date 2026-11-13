@@ -15,6 +15,7 @@
     "client.js",
     "cordis.patch.yml",
     "lib/host/*.js",
+    "lib/shared/*.js",
     "locale/*.json",
     "icon.svg"
   ],
@@ -28,8 +29,11 @@
     }
   },
   "scripts": {
-    "check": "node --check index.js && node --check client.js && npm test",
+    "check": "node scripts/syntax-check.mjs && npm test",
     "test": "node --test \"test/*.test.mjs\"",
+    "test:repeat": "node scripts/test-repeat.mjs",
+    "syntax": "node scripts/syntax-check.mjs",
+    "inline:playhead": "node scripts/inline-playhead.mjs --write",
     "test:l2": "node --test \"test/integration/*.test.mjs\"",
     "smoke": "node scripts/service-smoke.mjs",
     "test:live": "node scripts/playback-test.mjs",
