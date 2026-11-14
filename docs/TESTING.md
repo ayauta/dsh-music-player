@@ -242,7 +242,7 @@ npm run test:repeat -- test/player-transport.test.mjs 20    # 打印 n/20 red
 
 ### 2.6 静态守卫的写法（2026-11-15）
 
-`client.js` 没有渲染器可给 `node --test`（D-02），所以有一部分事实只能靠**读源码**的守卫。两条写法规则：
+`client.js` 没有渲染器可给 `node --test`（D-02），所以有一部分事实只能靠**读源码**的守卫。三条写法规则：
 
 - **规则一：断言接缝，不断言拼写。** 守卫钉"调用了哪个 module、把答案写回哪里、时钟从哪读"，
   而不是实参的逐字写法。反例（2026-11-15 被合法重构打红）：`resolveSeek\(pendingRef\.current, player, Date\.now\(\)\)`
@@ -252,6 +252,12 @@ npm run test:repeat -- test/player-transport.test.mjs 20    # 打印 n/20 red
   结构性问题都能查：`test/docs.test.mjs`（表格必须有表头、列数与表头一致、`D-nn` / `Bnn` 唯一且递增）
   与 `client-source` 的 CSS locality 用例（样式表里每个 `.dshm-*` 必须在源码别处被渲染）。
   两者落地当天抓出 7 处真实缺陷（3 张表 + 4 段死 CSS）；同样的内容写成 AGENTS 规则一条也抓不到。
+- **规则三：能跑就别只解析。** `npm run check` 的语法检查只**解析** `client.js`，不执行它。
+  2026-11-15 一处 CSS 注释里的反引号提前结束了模板字符串，余下 CSS 被当成 JS——**语法依然合法**，
+  当时的 175 个测试全绿，直到重启才发现整个插件一个 slot 都没注册。
+  `test/client-load.test.mjs` 现在会在 `vm` 里真跑一遍 bundle（假 React + 假 ctx）：注册、`inject` 清单、
+  `apply(ctx)` 注入四个 slot、四个 cell 浅渲染、样式表围栏恰好一对。
+  **改 CSS 区时不要在注释里写反引号**——这条守卫会当场红（已变异验证）。
 
 ---
 ## 3. 默认拒绝的脚本（Phase 0B-1 起由代码强制）
@@ -535,6 +541,7 @@ npm run smoke -- --library <path> --allow-real-library   # 只读诊断，需显
 | 2026-11-15 | Automated | 同上 | L1 | `npm run test:repeat -- test/player-transport.test.mjs 5` | **Passed**：`0/5 red in 6.4s` | 脚本 | 只说明这 5 次运行没红；竞态用例的稳定性判据，不是"没有竞态"的证明 |
 | 2026-11-15 | Automated（非测试层） | 同上 | — | 把 `client.js` 的真实 CSS 抽出（`artifacts/d36-range/build-harness.mjs` → `harness.html`，不入库），配等价标记用 headless Edge 157 渲染亮/暗两套、五处 surface 截图（`artifacts/d36-range/real-css-light-dark.png`） | **Passed**：4/3px 轨、12/10px 滑块、悬停 6/5px、气泡锚在滑块圆心、10px 迷你行、无滑块设置行均按 DESIGN §7 呈现 | 脚本 | **不**经过 DSH 宿主，**不**覆盖 slot 挂载与 React 生命周期；只为人眼核对视觉参数 |
 | 2026-11-15 | Automated | 提交 `ebbd119` / `7f9da02` / `72b38a5` | L1 | `npm run check`（含新增 `test/docs.test.mjs` 5 例与 CSS locality 用例） | **Passed**：171 tests / 0 fail；两条新守卫落地当天抓出 3 张坏表 + 4 段死 CSS | 脚本 | 文档守卫只查形状不查正文；CSS locality 只查"有没有人渲染这个类"，不查它渲染得对不对 |
+| 2026-11-15 | Automated | 提交 `475b64c` / `18ae142`（bundle `dshm-b250ad1e8c34`） | L1 | `npm run check`（新增 `test/client-load.test.mjs` 4 例） | **Passed**：175 tests / 0 fail；变异（把反引号放回 CSS 注释）→ 围栏用例与加载用例同时红，复现"插件整个不加载" | 脚本 | 浅渲染不跑 effect、ref 为空；**不**证明真 DOM / React 生命周期 / 真实宿主 UI（那是 L3） |
 **关于 2026-10-29 那条 L3 记录（`scripts/playback-test.mjs`）的说明**：
 
 - 该脚本直接打运行中的插件，**副作用**：覆盖真实队列、`prefs.set` 改真实设置、改变当前播放、结束后不恢复（见 §4）。

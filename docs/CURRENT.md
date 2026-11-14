@@ -3,7 +3,7 @@
 > 只回答"此刻在哪"：基线、能用的、阻塞、未验证、下一步。
 > 证据看 `docs/TESTING.md` §8；缺陷看 `LIMITATIONS.md`；历史看 `CHANGELOG.md` 与 git。
 
-最后更新：2026-11-15（D-36 落地 + 架构评审/回归改进：表格与死 CSS 守卫；**待 L3**）
+最后更新：2026-11-15（D-36 落地；修掉"整个插件不加载"的 CSS 注释反引号，并加加载守卫；**待 L3**）
 
 ---
 
@@ -16,7 +16,7 @@
 | 版本 | `1.7.0`。`b8dc624` 之后的全部工作未发版，见 `CHANGELOG.md` → `[Unreleased]` |
 | 最近验证基线 | **`dshm-847e9b43df0b`（Manual L3，2026-11-15，用户："验证完成了，正常"）**：R15 / D-35、D-32、D-33、B35 一并验收；上一基线为 `dshm-c517ae41e53e`（2026-11-12） |
 | 已证加载的 bundle | `dshm-847e9b43df0b`：2026-11-15 用户重启后 L3 通过（Manual）；宿主 artifact rev 与 served 一致见 TESTING §8 |
-| 当前源码 bundle（**未验证**） | `dshm-dbe3cc92a8be`：D-36 落地 + 设置音量条归位 + 4 段死 CSS 清理后的指纹；需重启 DSH 并在 served 字节上核对 |
+| 当前源码 bundle（**未验证**） | `dshm-b250ad1e8c34`：修掉"CSS 注释反引号"后的指纹；需重启 DSH 并在 served 字节上核对 |
 | 更早的真实宿主基线 | `59a1e9b`：真实库 v2、85 首 / 4 来源、WASAPI 试听通过 |
 | 标签 | 无 |
 | 数据库 | `user_version = 2`；真实库 85 首 / 0 missing / 4 来源（2026-11-11 只读核对） |
@@ -110,4 +110,5 @@
 - 第二十三轮（L3 验收记录）：用户重启后确认「验证完成了，正常」，覆盖 R15 / D-35、D-32、D-33、B35；TESTING §8 加一条 Manual 记录，基线更新为 `dshm-847e9b43df0b`；§4 里七行待验合并为一行「已验收（后续改动需重验）」；§5 第一项（重启 L3）删除并重排：`prev()` 的 3 秒判据改用 `currentPositionMs()`——宿主内插值，复用客户端的 `positionOf()`；`isPlayingNow()` 成为快照与规则共用的唯一定义。L1 两例先红后绿、变异（换回采样值）红、连跑 `0/3 red`；全量 **160/160**。客户端未改，bundle 仍 `dshm-847e9b43df0b`；**需重启 DSH**
 - 第二十四轮（D-36，原生 range 落地；`/grill-with-docs` 两轮裁定 + `/prototype` 先出方案）：用户否掉 D-34 里"键盘由 UA 提供"这半句，要求**插件没有任何键盘操作**。取证与原型把这句话拆成三件事（键位绑定 / Tab 停靠点 / 键盘路径），实测「不响应方向键」在表单控件上做不到，因此定为：换原生 range（`appearance:none` + `::-webkit-slider-*`，视觉参数不变）+ **`tabIndex={-1}` 摘掉 Tab 停靠点** + 仍不写任何键位判定。原型在 `prototype/2026-11-15-native-range/`（0 现状 / A 纯伪元素 / B accent-color / C 双层，实测写入 120→61/s、`step` 同时决定键盘步进与滑块量化）。顺带修掉两个原型撞出来的坑：一次只允许一个 seek 在途（`planSeek`/`settleSeek`，否则连按被前一次的盖章提前放行）、静止时不写气泡文本与拖动中不回写 `value`。守卫：`type: 'range'` 与 `tabIndex: -1` 成对且各两处、`role: 'progressbar'/'meter'` 禁止复现、无键 props（变异两处各自红）。`npm run check` **165/165**、`test:repeat -- test/player-transport.test.mjs 5` **0/5 red**；bundle → `dshm-d10c2f0d6f40`，**需重启 DSH**；L3 四条见 handoff §5（Tab 不进 / 点过之后能改 / 拖动 / 视觉同族）
 - 第二十五轮（`/improve-codebase-architecture` + `/retro`，架构评审报告见 `%TEMP%/architecture-review-2026-11-15.html`）：子代理带新上下文走了一遍最近改动面，报 3 个候选 + 2 个被 deletion test 否掉的。**真缺陷一个**：`.dshm-vol` 的三条规则匹配不到任何元素（设置行用的是裸 `<div>`），于是"设置里没有滑块"这句意图只存在于 CSS 注释里，控件实际穿着面板音量的常显滑块 —— 给设置行补上 class 修正，并顺手删掉 4 段死规则（`dshm-disclose` / `dshm-pop-more` / `dshm-sheet-body` / `dshm-chips`）。**守卫两处**：新增 `test/docs.test.mjs`（表格必须有表头、列数与表头一致、`D-nn`/`Bnn` 唯一递增）与 `client-source` 的 CSS locality 用例（样式表里每个 `.dshm-*` 必须在源码别处被渲染）——落地当天抓出 3 张坏表 + 4 段死 CSS；另把两条"断言拼写"的守卫改成断言接缝（`resolveSeek\(` 的实参写法、`type:'range'` 各出现两次）。运行时候选（两条滑条共用管线 / seek 队列的驱动器 / 三处 rAF）**故意不做**：它们压在待验的 L3 基线上，先重启验完 D-36 再按 2→3→4→5 顺序做。`npm run check` **171/171**、`test:repeat` 0/5 red；bundle → `dshm-dbe3cc92a8be`
+- 第二十六轮（回归：**整个插件不加载**，已修 + 加守卫）：用户重启后侧栏既无「音乐」也无迷你播放器。定位方式：用假 React + 假 ctx 在 `vm` 里真跑 `client.js`，factory 立刻抛 `ReferenceError: vol is not defined` —— 上午 D-36 那段说明性注释里写了用反引号包起来的 `.dshm-vol`，反引号提前结束了 CSS 模板字符串，余下 CSS 被当成 JS；那段"合法但语义错误"的代码让 `node --check` 照样通过，所以 175 个测试全绿、pre-commit 也过。修法：CSS 区注释不写反引号。**新增 `test/client-load.test.mjs`**（bundle 注册 / `inject` 清单 / `apply(ctx)` 注入四槽 / 四个 cell 浅渲染 / 样式表围栏恰好一对），并把"能跑就别只解析"写进 `docs/TESTING.md` §2.6 规则三。变异（把反引号放回去）→ 2 例红，复现今天的失败。`npm run check` **175/175**；bundle → `dshm-b250ad1e8c34`
 - 工作区：三个提交已落 —— `ebbd119`（client）/ `7f9da02`（docs）/ `72b38a5`（chore）；原型在 `prototype/native-range` 分支（master 上不带）。下一步只剩重启后的 L3
