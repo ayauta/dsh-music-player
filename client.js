@@ -18,14 +18,14 @@
  *    focus stops to the host's UI, and no key handlers of its own (D-28).
  */
 window.__ModuleLoader__.load({
-  id: '@local/dsh-music',
+  id: '@ayauta/dsh-music-player',
   factory(require) {
     // Identity of this file's content: SHA-256 over this source with the line
     // below removed, so stamping is a fixed point. Refresh it with
     // `node scripts/bundle-id.mjs --write`; `npm test` fails while it is stale.
     // Module scope on purpose: bundles are concatenated into one classic script,
     // where a top-level `const` would collide with another module's.
-    const BUNDLE_ID = 'dshm-d4ad60246487' // dsh-music-bundle-id
+    const BUNDLE_ID = 'dshm-c96622c03794' // dsh-music-bundle-id
 const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by motion-source test)
 
     const React = require('react')

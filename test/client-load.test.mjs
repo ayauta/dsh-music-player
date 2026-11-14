@@ -112,10 +112,14 @@ function walk (node, seen = { count: 0 }) {
   return seen.count
 }
 
-test('the bundle registers itself with the host loader', () => {
+test('the bundle registers itself under the package name (DSH ui-plugin contract)', () => {
+  // `references/ui-plugin.md`: "The browser artifact registers a lazy factory whose
+  // id equals the package name." Only one place knows the name — package.json — so
+  // the two cannot drift after a rename.
+  const manifest = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8'))
   const mod = loadBundle()
   assert.ok(mod !== null, 'client.js never called window.__ModuleLoader__.load')
-  assert.equal(mod.id, '@local/dsh-music')
+  assert.equal(mod.id, manifest.name, 'the client factory id must equal the package name')
   assert.equal(typeof mod.factory, 'function')
 })
 
