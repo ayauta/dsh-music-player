@@ -130,8 +130,7 @@ UI 三层并排显示，不会因为「源文件是 24bit」就宣称 bit-perfec
 - 播放头**算术**（补间 + 两端夹取 + 进度分数 + 剩余时间 + 定位等待）只有一份实现：`lib/shared/playhead.js`，
   由 `node scripts/inline-playhead.mjs --write` 生成进 `client.js` 的 `BEGIN/END inlined` 标记区；
   标记区与模块逐字符一致由 `test/inline-playhead.test.mjs` 守卫，`positionSampledAt` 也只允许出现在标记区里。
-  **两种时钟、两个问题**：补间用 `performance.now()`（锚点＝快照到达页面的那一刻，`anchorFor` 按快照对象
-  身份缓存），等待用墙钟（宿主用 `Date.now()` 打采样时刻，这是唯一两边可比的时间基准）。见 D-24 / D-27。
+  补间与等待各用哪种时钟，见 `docs/DECISIONS.md` D-27（唯一出处）。
 - 状态轮询 1 Hz（页面隐藏时 2.5s），只有「曲目 / 播放态 / 音量 / 模式 / 队列长度 / 引擎状态 / 库计数」变化才通知订阅者。
 - 封面通过 `<img src="/music/cover?id=…">`，ETag + 内存缓存；不出图片 base64。
 - 样式全部用 `--dsw-alias-*` / `--dsw-specific-*` token，唯一硬编码颜色是无封面占位的中性渐变。

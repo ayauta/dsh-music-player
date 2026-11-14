@@ -3,16 +3,13 @@
  * once per second" into "where the playhead is *now*", plus the seek latch that
  * decides which value the progress bar paints right after a request.
  *
- * Two clocks, two questions — the split is the point of this module:
+ * Two clocks, two questions — the split and the reason for it live in
+ * `docs/DECISIONS.md` D-27; this file only pins the behaviour.
  *
- *  - **How much time has passed?** → the caller's monotonic clock
- *    (`performance.now()`), anchored when the snapshot landed. Wall-clock
- *    readings jump on NTP steps and suspend/resume, and a jumped clock used for
- *    interpolating shows up as the bar leaping.
- *  - **Did the host see my seek yet?** → the wall clock. The host stamps
- *    `positionSampledAt` with `Date.now()`, so comparing that against the wall
- *    reading taken when the seek was requested is the only cross-process
- *    comparison available. A snapshot stamped *before* the request is the
+ *  - **How much time has passed?** → the caller's monotonic clock.
+ *  - **Did the host see my seek yet?** → the wall clock, the one reading both
+ *    processes can date the same way (the host stamps it with `Date.now()`).
+ *    A snapshot stamped *before* the request is the
  *    in-flight one from the previous poll: it is stale, and painting it is what
  *    made the bar snap back.
  *
