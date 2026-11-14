@@ -7,7 +7,7 @@
  */
 import { startMusicService, normalizeConfig, makeFileLogger, dataRoot, VERSION } from './lib/host/plugin.js'
 
-export const name = '@local/dsh-music'
+export const name = '@ayauta/dsh-music-player'
 export const inject = ['webServer']
 
 export function apply(ctx, rawConfig) {

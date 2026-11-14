@@ -1,0 +1,41 @@
+# 发布到 npm：`git tag v* && git push --tags` 之后自动跑
+#
+# 前置（只需要做一次，在 GitHub 仓库设置里）：
+#   Settings → Secrets and variables → Actions → New repository secret
+#   Name: NPM_TOKEN   Value: 一个 npm Automation token（npmjs.com → Access Tokens → Generate）
+# 或者不用 token：在 npmjs.com 上给这个包配置 Trusted Publishing（OIDC），
+# 把下面 publish 步骤里的 NODE_AUTH_TOKEN 去掉即可（`id-token: write` 已经开好）。
+#
+# 手工发布（不想用 CI）：npm login && npm publish --access public
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # npm provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install (lockfile only, no scripts)
+        run: npm ci --ignore-scripts
+
+      - name: Guardrail — the same check the pre-commit hook runs
+        run: npm run check
+
+      - name: Publish
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -1,6 +1,6 @@
 - insert:
     - id: dsh-music
-      name: '@local/dsh-music'
+      name: '@ayauta/dsh-music-player'
       inject: [webServer]
       config:
         engine: auto

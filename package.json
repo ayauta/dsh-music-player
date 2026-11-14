@@ -1,9 +1,29 @@
 {
-  "name": "@local/dsh-music",
-  "version": "1.7.0",
-  "private": true,
+  "name": "@ayauta/dsh-music-player",
+  "version": "1.8.0",
   "type": "module",
   "description": "Native-feeling local hi-res music player for the DeepSeek Harness: mpv engine, library index, mini player and Now Playing.",
+  "license": "MIT",
+  "author": "ayauta",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ayauta/dsh-music-player.git"
+  },
+  "homepage": "https://github.com/ayauta/dsh-music-player#readme",
+  "bugs": {
+    "url": "https://github.com/ayauta/dsh-music-player/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "music",
+    "mpv",
+    "hi-res"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
@@ -17,7 +37,9 @@
     "lib/host/*.js",
     "lib/shared/*.js",
     "locale/*.json",
-    "icon.svg"
+    "icon.svg",
+    "NOTICE.md",
+    "LICENSE"
   ],
   "dsh": {
     "bundle": {
