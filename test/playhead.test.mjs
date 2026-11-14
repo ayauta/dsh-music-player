@@ -19,7 +19,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { anchorOf, nextAnchor, nextPaint, acceptResponse, positionOf, fractionOf, remainingOf, resolveSeek } from '../lib/shared/playhead.js'
+import { anchorOf, nextAnchor, nextPaint, acceptResponse, positionOf, fractionOf, remainingOf, resolveSeek, idleSeek, planSeek, settleSeek } from '../lib/shared/playhead.js'
 
 /** A host snapshot shaped like `player.state` (only the fields read here). */
 const playing = (positionMs, durationMs) => ({
@@ -367,3 +367,55 @@ test('a latched position is never negative', () => {
     ms: 0,
   })
 })
+
+/* ── one seek in flight at a time ───────────────────────────────────────── */
+
+/**
+ * The latch in `resolveSeek` compares wall stamps, and the host stamps *when it
+ * applies* a seek. Two seeks in flight at once therefore break it: the first
+ * one's stamp is newer than the second request, so the latch lets go on the
+ * older position and the bar steps back for one poll. Serialising the requests
+ * is what keeps "a stamp at or after my request" true — hence this tiny queue.
+ * See `docs/DECISIONS.md` D-36.
+ */
+test('a second seek waits for the first to land, then goes out by itself', () => {
+  const first = planSeek(idleSeek(), 30_000)
+  assert.equal(first.send, 30_000, 'an idle queue sends at once')
+  assert.deepEqual(first.state, { inFlight: true, queued: null })
+
+  const second = planSeek(first.state, 31_000)
+  assert.equal(second.send, null, 'nothing else goes out while one seek is in flight')
+  assert.deepEqual(second.state, { inFlight: true, queued: 31_000 })
+
+  const landed = settleSeek(second.state)
+  assert.equal(landed.send, 31_000, 'the queued target is sent as soon as the first lands')
+  assert.deepEqual(landed.state, { inFlight: true, queued: null })
+
+  const done = settleSeek(landed.state)
+  assert.equal(done.send, null)
+  assert.deepEqual(done.state, idleSeek())
+})
+
+test('the queue keeps only the newest target', () => {
+  let state = planSeek(idleSeek(), 30_000).state
+  state = planSeek(state, 31_000).state
+  state = planSeek(state, 32_000).state
+  assert.deepEqual(state, { inFlight: true, queued: 32_000 }, 'three presses while in flight = one seek')
+})
+
+test('a queued target is never reordered against the one in flight', () => {
+  // The interesting failure was not "dropped" but "applied out of order": the
+  // queued seek must go out after the first lands, never before.
+  const first = planSeek(idleSeek(), 60_000)
+  const second = planSeek(first.state, 61_000)
+  assert.equal(second.send, null)
+  assert.equal(settleSeek(second.state).send, 61_000)
+})
+
+test('a missing or negative target is clamped, not queued as garbage', () => {
+  assert.equal(planSeek(idleSeek(), Number.NaN).send, 0)
+  assert.equal(planSeek(idleSeek(), -500).send, 0)
+  const queued = planSeek(planSeek(idleSeek(), 1_000).state, undefined).state
+  assert.equal(queued.queued, 0)
+})
+

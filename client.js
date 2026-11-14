@@ -13,7 +13,9 @@
  *  - One type scale, declared once (`--dshm-fs-*`), applied everywhere.
  *  - Playheads animate through rAF writing `--p`; no per-frame React renders.
  *  - Transport glyphs are filled (Apple style); chrome glyphs are Lucide (ISC).
- *  - Every icon-only control carries an aria-label and is keyboard reachable.
+ *  - Every icon-only control carries an aria-label. The two sliders are native
+ *    ranges deliberately left out of the tab order (D-36): the plugin adds no
+ *    focus stops to the host's UI, and no key handlers of its own (D-28).
  */
 window.__ModuleLoader__.load({
   id: '@local/dsh-music',
@@ -23,11 +25,11 @@ window.__ModuleLoader__.load({
     // `node scripts/bundle-id.mjs --write`; `npm test` fails while it is stale.
     // Module scope on purpose: bundles are concatenated into one classic script,
     // where a top-level `const` would collide with another module's.
-    const BUNDLE_ID = 'dshm-847e9b43df0b' // dsh-music-bundle-id
+    const BUNDLE_ID = 'dshm-dbe3cc92a8be' // dsh-music-bundle-id
 const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by motion-source test)
 
     const React = require('react')
-    const { useState, useEffect, useRef, useCallback, useSyncExternalStore } = React
+    const { useState, useEffect, useLayoutEffect, useRef, useCallback, useSyncExternalStore } = React
     const h = React.createElement
 
     /* ────────────────────────────── text ────────────────────────────── */
@@ -421,15 +423,15 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
 .dshm-ib:disabled { opacity: .35; cursor: default; }
 .dshm-ib:focus-visible, .dshm-focusable:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
 /* Press: a brief, small scale plus a tint — never a bounce. */
-.dshm-btn, .dshm-disclose, .dshm-nav, .dshm-card { transition: background-color var(--dshm-dur-hover) ease,
+.dshm-btn, .dshm-nav, .dshm-card { transition: background-color var(--dshm-dur-hover) ease,
   color var(--dshm-dur-hover) ease, transform var(--dshm-dur-press) var(--dshm-ease-out); }
-.dshm-btn:active, .dshm-disclose:active { transform: scale(.97); transition-duration: var(--dshm-dur-press-in); }
+.dshm-btn:active { transform: scale(.97); transition-duration: var(--dshm-dur-press-in); }
 .dshm-nav:active { transform: scale(.985); transition-duration: var(--dshm-dur-press-in); }
 .dshm-mini:active { background: color-mix(in srgb, var(--dsw-alias-label-primary) 10%, transparent); }
 .dshm-mini-cover:active, .dshm-mini-info:active { transform: none; }
 .dshm-ib:active { background: color-mix(in srgb, var(--dsw-alias-label-primary) 12%, transparent); }
 @media (prefers-reduced-motion: reduce) {
-  .dshm-ib:active, .dshm-btn:active, .dshm-disclose:active, .dshm-nav:active { transform: none; }
+  .dshm-ib:active, .dshm-btn:active, .dshm-nav:active { transform: none; }
 }
 
 /* cover */
@@ -458,34 +460,51 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
 .dshm-mini-controls { display: flex; align-items: center; gap: 0; flex: none; }
 .dshm-mini[data-collapsed="true"] { padding: 6px; display: flex; justify-content: center; }
 .dshm-mini-progress { position: absolute; left: 53px; right: 8px; bottom: 3px; }
-.dshm-mini-progress .dshm-progress { height: 8px; }
-.dshm-mini-progress .dshm-progress-thumb { display: none; width: 10px; height: 10px; margin: -5px 0 0 -5px; }
-.dshm-mini-progress:hover .dshm-progress-thumb,
-.dshm-mini-progress .dshm-progress[data-dragging="true"] .dshm-progress-thumb { display: block; }
 
-/* progress */
-.dshm-progress { position: relative; display: flex; align-items: center; width: 100%; touch-action: none;
-  cursor: pointer; user-select: none; }
-.dshm-progress[data-variant="mini"] { height: 10px; }
+/* progress — one native input[type=range] per bar (D-36). The wrapper keeps
+   the hit area and owns --p; the control owns the value, the pointer and the
+   focus. Painted through ::-webkit-slider-* because that is the only hook
+   Chromium gives us for a range's track and thumb. */
+.dshm-progress { position: relative; width: 100%; --dshm-track: 4px; --dshm-thumb: 12px;
+  --dshm-slot: color-mix(in srgb, var(--dsw-alias-label-primary) 14%, transparent);
+  --dshm-fill: var(--dsw-alias-label-primary); }
 .dshm-progress[data-variant="sheet"] { height: 20px; }
-.dshm-progress-track { position: relative; width: 100%; border-radius: 999px; overflow: hidden;
-  background: color-mix(in srgb, var(--dsw-alias-label-primary) 14%, transparent); }
-.dshm-progress[data-variant="mini"] .dshm-progress-track { height: 3px; }
-.dshm-progress[data-variant="sheet"] .dshm-progress-track { height: 4px; }
-.dshm-progress[data-variant="mini"]:hover .dshm-progress-track,
-.dshm-progress[data-variant="mini"][data-dragging="true"] .dshm-progress-track { height: 5px; }
-.dshm-progress[data-variant="sheet"]:hover .dshm-progress-track,
-.dshm-progress[data-variant="sheet"][data-dragging="true"] .dshm-progress-track { height: 6px; }
-.dshm-progress-fill { height: 100%; width: 100%; transform-origin: left center;
-  transform: scaleX(var(--p, 0)); background: var(--dsw-alias-label-primary); border-radius: 999px; }
-.dshm-progress-thumb { position: absolute; top: 50%; left: calc(var(--p, 0) * 100%); width: 12px; height: 12px;
-  margin: -6px 0 0 -6px; border-radius: 50%; background: var(--dsw-alias-bg-base);
-  border: 1px solid var(--dsw-alias-border-l2); box-shadow: 0 1px 4px rgba(0,0,0,.28);
-  opacity: 0; transition: opacity 120ms var(--dshm-ease-out); pointer-events: none; }
-.dshm-progress[data-variant="sheet"]:hover .dshm-progress-thumb,
-.dshm-progress[data-variant="mini"]:hover .dshm-progress-thumb,
-.dshm-progress[data-dragging="true"] .dshm-progress-thumb { opacity: 1; }
-.dshm-progress-bubble { position: absolute; bottom: calc(100% + 6px); left: calc(var(--p, 0) * 100%);
+.dshm-progress[data-variant="volume"] { height: 18px; --dshm-track: 3px;
+  --dshm-slot: color-mix(in srgb, var(--dsw-alias-label-primary) 12%, transparent); }
+.dshm-progress[data-variant="mini"] { height: 10px; --dshm-track: 3px; --dshm-thumb: 10px; }
+.dshm-progress[data-variant="sheet"]:hover,
+.dshm-progress[data-variant="sheet"][data-dragging="true"] { --dshm-track: 6px; }
+.dshm-progress[data-variant="mini"]:hover,
+.dshm-progress[data-variant="mini"][data-dragging="true"] { --dshm-track: 5px; }
+/* The control fills the wrapper, so its box *is* the hit area (DESIGN §7: 20px in
+   the panel, 10px in the mini row) — the pointer target never shrinks to the
+   visible 3–4px track. */
+.dshm-range { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0;
+  background: transparent; cursor: pointer; -webkit-appearance: none; appearance: none; }
+/* D-36: the control is not a tab stop, so a pointer click must not draw a ring. */
+.dshm-range:focus:not(:focus-visible) { outline: none; }
+/* The fill stops at the thumb's centre: the UA's travel is
+   [thumb/2, width - thumb/2], so painting the container's full width would leave
+   the fill half a thumb ahead of the thumb at either end of the track. */
+.dshm-range::-webkit-slider-runnable-track { height: var(--dshm-track); border-radius: 999px;
+  background: linear-gradient(to right,
+    var(--dshm-fill) 0 calc(var(--p, 0) * (100% - var(--dshm-thumb)) + var(--dshm-thumb) / 2),
+    var(--dshm-slot) calc(var(--p, 0) * (100% - var(--dshm-thumb)) + var(--dshm-thumb) / 2) 100%); }
+.dshm-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none;
+  width: var(--dshm-thumb); height: var(--dshm-thumb); border-radius: 50%;
+  background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l2);
+  box-shadow: 0 1px 4px rgba(0,0,0,.28);
+  margin-top: calc((var(--dshm-track) - var(--dshm-thumb)) / 2);
+  opacity: 0; transition: opacity 120ms var(--dshm-ease-out); }
+/* When the thumb shows (DESIGN §7): panel progress and volume keep it always, the
+   mini row reveals it on hover or while dragging, the settings row has none — a
+   0px thumb is what makes that fill run the full width. */
+.dshm-progress[data-variant="sheet"] .dshm-range::-webkit-slider-thumb,
+.dshm-progress[data-variant="volume"] .dshm-range::-webkit-slider-thumb,
+.dshm-progress[data-variant="mini"] .dshm-range:hover::-webkit-slider-thumb,
+.dshm-progress[data-dragging="true"] .dshm-range::-webkit-slider-thumb { opacity: 1; }
+.dshm-progress-bubble { position: absolute; bottom: calc(100% + 6px);
+  left: calc(var(--p, 0) * (100% - var(--dshm-thumb)) + var(--dshm-thumb) / 2);
   transform: translateX(-50%); padding: 2px 7px; border-radius: 6px; white-space: nowrap;
   background: var(--dsw-alias-bg-overlay); border: 1px solid var(--dsw-alias-border-l1);
   font-size: var(--dshm-fs-caption); font-weight: 600; letter-spacing: .01em;
@@ -516,33 +535,22 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
 .dshm-pop-sub { font-size: 13px; color: var(--dsw-alias-label-secondary); margin-top: 2px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dshm-pop-progress { margin-top: 14px; }
-.dshm-pop .dshm-progress-thumb { opacity: 1; }
 .dshm-pop-times { display: flex; justify-content: space-between; align-items: baseline; margin-top: 4px;
   font-size: var(--dshm-fs-caption); color: var(--dsw-alias-label-secondary); }
 .dshm-pop-transport { display: flex; align-items: center; justify-content: center; gap: 18px; padding: 14px 0 0; }
 /* Desktop icon buttons keep the system-style hover plate (HIG · Toolbars). */
 .dshm-pop-volume { display: flex; align-items: center; gap: 8px; padding: 9px 0 0; }
-.dshm-pop-volume .dshm-progress { height: 18px; }
-.dshm-pop-volume .dshm-progress-track { height: 3px;
-  background: color-mix(in srgb, var(--dsw-alias-label-primary) 12%, transparent); }
-.dshm-pop-volume .dshm-progress-thumb { opacity: 1; }
-.dshm-pop-more { display: flex; flex-direction: column; gap: 1px; padding-top: 10px; margin-top: 10px;
-  border-top: 1px solid var(--dsw-alias-border-l1); }
-.dshm-sheet-body { padding: 4px 0 0; overflow: auto; flex: 1 1 auto; min-height: 0; }
 .dshm-rowline { display: flex; align-items: center; gap: 6px; padding-top: 6px; }
 .dshm-grow { flex: 1 1 auto; }
 .dshm-vol { display: flex; align-items: center; gap: 8px; width: 124px; flex: none; }
-.dshm-vol .dshm-progress-track { height: 3px; }
-.dshm-vol .dshm-progress-fill { background: var(--dsw-alias-label-secondary); }
-.dshm-vol .dshm-progress-thumb { display: none; }
-.dshm-chips { display: flex; align-items: center; gap: 6px; padding-top: 6px; }
+/* Settings is the one bar without a thumb: the row already prints the number on the
+   right, so the thumb would only repeat it. `.dshm-vol` is the row's own class — it
+   was dead CSS until 2026-11-15, which is how the settings bar ended up wearing the
+   panel volume's always-on thumb instead. */
+.dshm-vol .dshm-progress { --dshm-thumb: 0px; --dshm-fill: var(--dsw-alias-label-secondary); }
+.dshm-vol .dshm-progress[data-variant="volume"] .dshm-range::-webkit-slider-thumb { opacity: 0; }
 .dshm-chip { font-size: 10.5px; font-weight: 500; letter-spacing: .02em; padding: 1.5px 6px; border-radius: 5px;
   border: 1px solid var(--dsw-alias-border-l1); color: var(--dsw-alias-label-secondary); white-space: nowrap; }
-.dshm-disclose { border: 0; background: transparent; color: var(--dsw-alias-label-secondary);
-  font-size: var(--dshm-fs-sub); font-weight: 500; padding: 6px 8px; border-radius: 7px; cursor: pointer;
-  display: inline-flex; align-items: center; gap: 6px; text-align: left; }
-.dshm-disclose:hover { color: var(--dsw-alias-label-primary);
-  background: color-mix(in srgb, var(--dsw-alias-label-primary) 7%, transparent); }
 .dshm-kv { display: grid; grid-template-columns: 88px 1fr; gap: 5px 10px; font-size: var(--dshm-fs-sub); padding: 10px 2px 2px; }
 .dshm-kv dt { color: var(--dsw-alias-label-secondary); }
 .dshm-kv dd { margin: 0; overflow-wrap: anywhere; }
@@ -685,10 +693,10 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
   .dshm-pop, .dshm-menu { animation: none !important; }
   .dshm-pop { transition: none !important; }
   .dshm-ib, .dshm-lyric-line, .dshm-toggle, .dshm-toggle::after, .dshm-card-art,
-  .dshm-progress-track, .dshm-progress-thumb, .dshm-mini { transition: none !important; }
+  .dshm-range, .dshm-mini { transition: none !important; }
 }
 @media (prefers-contrast: more) {
-  .dshm-progress-track { background: color-mix(in srgb, var(--dsw-alias-label-primary) 26%, transparent); }
+  .dshm-progress { --dshm-slot: color-mix(in srgb, var(--dsw-alias-label-primary) 26%, transparent); }
   .dshm-ib { color: var(--dsw-alias-label-primary); }
 }
 `
@@ -984,6 +992,52 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
     }
 
     /**
+     * The seek queue: one request in flight at a time.
+     *
+     * `resolveSeek` decides the latch by comparing wall stamps, and the host stamps
+     * `positionSampledAt` **when it applies** a seek. That works for one request;
+     * with two in flight it breaks in a way that looks like a different bug: press
+     * `→` twice, and the *first* seek's stamp is newer than the *second* request, so
+     * the second latch lets go on the older position and the bar steps back for one
+     * poll. (Measured in the prototype: three fast presses moved the bar by two
+     * steps, and one of the three was swallowed.)
+     *
+     * The fix is ordering, not thresholds: keep at most one request in flight, and
+     * let the newest target overwrite whatever is queued behind it. Then "a stamp at
+     * or after my request" is true again for every request that is actually in
+     * flight, which is the only assumption `resolveSeek` ever made.
+     *
+     * @param {{ inFlight: boolean, queued: number|null }|null|undefined} state
+     * @param {number} requestMs target position for this request
+     * @returns {{ send: number|null, state: { inFlight: boolean, queued: number|null } }}
+     */
+    function planSeek(state, requestMs) {
+      const target = Math.max(0, finiteOr(requestMs, 0))
+      if (state !== null && state !== undefined && state.inFlight === true) {
+        return { send: null, state: { inFlight: true, queued: target } }
+      }
+      return { send: target, state: { inFlight: true, queued: null } }
+    }
+
+    /**
+     * The in-flight request landed: send the newest queued target, or go idle.
+     * @param {{ inFlight: boolean, queued: number|null }|null|undefined} state
+     * @returns {{ send: number|null, state: { inFlight: boolean, queued: number|null } }}
+     */
+    function settleSeek(state) {
+      const queued = state !== null && state !== undefined && Number.isFinite(state.queued)
+        ? Math.max(0, state.queued)
+        : null
+      if (queued === null) return { send: null, state: idleSeek() }
+      return { send: queued, state: { inFlight: true, queued: null } }
+    }
+
+    /** A queue with nothing in flight and nothing waiting. */
+    function idleSeek() {
+      return { inFlight: false, queued: null }
+    }
+
+    /**
      * Should this status answer be applied at all?
      *
      * The client asks for `status` from two places — the 1 Hz poll and the refresh
@@ -1136,170 +1190,229 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
     }
 
     /**
-     * One progress bar for both surfaces. Hover thickens the track, a thumb and
-     * a time bubble appear, pointer-down seeks immediately and drags with the
-     * finger, and the arrow keys move by 5s (Shift: 15s).
+     * One progress bar for both surfaces, as a native `<input type="range">`
+     * (D-36). The platform owns the control — pointer drags that leave the bar,
+     * touch, high contrast, and the arrow keys if anything ever focuses it. This
+     * file owns three things only: the fill's `--p`, the drag bubble, and the
+     * control's `value`, the one write that moves the thumb.
+     *
+     * It is deliberately **not a tab stop**: the plugin never inserts itself into
+     * the host's focus order, which is what D-28 was really protecting. The
+     * implicit `role=slider` is still honest — unlike the `progressbar` this
+     * replaces, which ARIA defines as always read-only while we let people drag it.
      */
+    const SEEK_STEP_MS = 1000
+
     function ProgressBar({ getPlayer, onSeek, variant = 'sheet' }) {
       const rootRef = useRef(null)
+      const inputRef = useRef(null)
+      const bubbleRef = useRef(null)
       const dragRef = useRef(null)
       const pendingRef = useRef(null)
       const paintedRef = useRef(null)
+      const writtenRef = useRef(-1)
+      const seekRef = useRef(idleSeek())
       const [dragging, setDragging] = useState(false)
-      const bubbleRef = useRef(null)
 
       const durationOf = () => getPlayer()?.durationMs ?? 0
+
+      /**
+       * A range cannot hold a value off its step grid, and its largest valid value
+       * is `floor(max / step) * step` — under a second short of the track's end.
+       * Nothing audible lives in that last step, so the value is clamped rather
+       * than the maximum being rounded up.
+       */
+      const quantise = (ms, duration) => {
+        const last = Math.max(0, Math.floor(duration / SEEK_STEP_MS) * SEEK_STEP_MS)
+        return Math.min(last, Math.max(0, Math.round(ms / SEEK_STEP_MS) * SEEK_STEP_MS))
+      }
 
       /**
        * Paint at most once per change. The rAF loop asks sixty times a second;
        * while paused the answer is identical every frame, and writing it anyway
        * invalidates style and layout each time — which is how a still bar
-       * shimmered by about a pixel (B32). The time readouts have always skipped
-       * unchanged values; this is the same guard for the bar.
+       * shimmered by about a pixel (B32).
+       *
+       * Two writers, two guards. `--p` follows the *host* position, which is what
+       * makes the fill glide; the value follows the step grid and is never written
+       * while a drag is in progress, because then the control already holds the
+       * truth. The bubble's text is written only while the bubble is visible:
+       * writing it while it is hidden is invisible work, the same mistake B32
+       * found in a different costume.
        */
-      const paint = (fraction) => {
+      const paint = (ms) => {
         const node = rootRef.current
-        if (node === null) return
-        const next = nextPaint(paintedRef.current, { fraction, label: formatTime(fraction * durationOf()) })
+        const input = inputRef.current
+        if (node === null || input === null) return
+        const duration = durationOf()
+        if (dragRef.current === null) {
+          const max = String(Math.round(Math.max(0, duration)))
+          if (input.max !== max) {
+            input.max = max
+            writtenRef.current = -1
+          }
+          const value = quantise(ms, duration)
+          if (writtenRef.current !== value) {
+            writtenRef.current = value
+            input.value = String(value)
+            input.setAttribute('aria-valuetext', formatTime(value))
+          }
+        }
+        const fraction = duration > 0 ? Math.min(1, Math.max(0, ms / duration)) : 0
+        const next = nextPaint(paintedRef.current, {
+          fraction,
+          label: dragRef.current === null ? '' : formatTime(ms),
+        })
         if (next.write === false) return
         paintedRef.current = { fraction: next.fraction, label: next.label }
         node.style.setProperty('--p', String(next.fraction))
-        if (bubbleRef.current !== null) bubbleRef.current.textContent = next.label
+        if (bubbleRef.current !== null && dragRef.current !== null) {
+          bubbleRef.current.textContent = next.label
+        }
       }
 
       /**
-       * A seek must not visibly snap back. The host publishes the playhead once
-       * per second, so right after a click the snapshot already in flight still
-       * carries the old position ("flicker").
-       *
-       * The release condition is "a snapshot the host stamped after I asked", not
-       * "less than N ms have passed and it is far enough away" — the old pair of
-       * numbers could let go early on the very snapshot it existed to hide. See
-       * `docs/DECISIONS.md` D-27.
+       * What the bar should show: the seat of a request still in flight, otherwise
+       * the interpolated host position. The latch is the module's job (D-27); this
+       * only asks it.
        */
-      const currentFraction = () => {
-        const duration = durationOf()
-        if (duration <= 0) return 0
+      const currentMs = () => {
         const player = getPlayer()
-        // Wall clock on both sides: the host stamps its own sample time with
-        // `Date.now()`, so this is the only comparison both processes share.
         const latched = resolveSeek(pendingRef.current, player, Date.now())
         pendingRef.current = latched.pending
-        if (latched.ms !== null) return Math.min(1, latched.ms / duration)
-        return fractionOf(anchorFor(player), performance.now())
+        return latched.ms === null ? estimateMs(player) : latched.ms
       }
+
+      /**
+       * One seek in flight at a time (D-36). Two overlapping requests break the
+       * latch: the first one's stamp is newer than the second request, so the bar
+       * lets go on the older position and steps back for a poll. The queue keeps
+       * only the newest target — which is also what holding a key means.
+       */
+      const dispatch = (ms) => {
+        const plan = planSeek(seekRef.current, ms)
+        seekRef.current = plan.state
+        if (plan.send === null) return
+        Promise.resolve()
+          .then(() => onSeek(plan.send))
+          .then(() => null, () => null)
+          .finally(() => {
+            const settled = settleSeek(seekRef.current)
+            seekRef.current = settled.state
+            if (settled.send !== null) dispatch(settled.send)
+          })
+      }
+
+      // Before the first browser paint: a bar that starts at zero and jumps to the
+      // real position one frame later is a flash, not a load.
+      useLayoutEffect(() => { paint(currentMs()) }, [])
 
       useEffect(() => {
         let frame = 0
         const tick = () => {
-          if (dragRef.current === null) paint(currentFraction())
+          if (dragRef.current === null) paint(currentMs())
           frame = requestAnimationFrame(tick)
         }
         frame = requestAnimationFrame(tick)
         return () => cancelAnimationFrame(frame)
       }, [getPlayer])
 
-      const fractionFromEvent = (event) => {
-        const node = rootRef.current
-        if (node === null) return 0
-        const rect = node.getBoundingClientRect()
-        if (rect.width === 0) return 0
-        return Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width))
-      }
-
-      const seekTo = (fraction, commit) => {
-        const duration = durationOf()
-        if (duration <= 0) return
-        const ms = Math.round(fraction * duration)
-        pendingRef.current = { ms, atMs: Date.now() }
-        paint(fraction)
-        if (commit) onSeek(ms)
-      }
-
       return h('div', {
         ref: rootRef,
         className: 'dshm-progress',
         'data-variant': variant,
         'data-dragging': dragging ? 'true' : undefined,
-        role: 'progressbar',
-        'aria-label': t('np.seek'),
-        'aria-valuemin': 0,
-        'aria-valuemax': Math.round(durationOf()),
-        'aria-valuenow': Math.round(estimateMs(getPlayer())),
-        'aria-valuetext': formatTime(estimateMs(getPlayer())),
-        onPointerDown: (event) => {
-          if (event.button !== 0 && event.pointerType === 'mouse') return
-          event.stopPropagation()
-          event.preventDefault()
-          const fraction = fractionFromEvent(event)
-          dragRef.current = fraction
-          setDragging(true)
-          try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* unsupported */ }
-          seekTo(fraction, false)
-        },
-        onPointerMove: (event) => {
-          const fraction = fractionFromEvent(event)
-          // Hovering used to rewrite the bubble's text here, for a bubble that
-          // is only visible while dragging (B32). It was invisible work on every
-          // pointer move, and a second writer of the same label.
-          if (dragRef.current === null) return
-          dragRef.current = fraction
-          seekTo(fraction, false)
-        },
-        onPointerUp: (event) => {
-          if (dragRef.current === null) return
-          const fraction = fractionFromEvent(event)
-          dragRef.current = null
-          setDragging(false)
-          try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* unsupported */ }
-          seekTo(fraction, true)
-        },
-        onPointerCancel: () => { dragRef.current = null; setDragging(false) },
       },
-      h('div', { className: 'dshm-progress-track' }, h('div', { className: 'dshm-progress-fill' })),
-      h('div', { className: 'dshm-progress-thumb' }),
+      h('input', {
+        ref: inputRef,
+        className: 'dshm-range',
+        type: 'range',
+        min: 0,
+        max: 0,
+        step: SEEK_STEP_MS,
+        // D-36: the plugin adds no tab stop to the host's UI.
+        tabIndex: -1,
+        'aria-label': t('np.seek'),
+        onInput: (event) => {
+          // Dragging only paints. The request waits for `change`, which the control
+          // fires once on release — the same shape this component always had.
+          const ms = Number(event.currentTarget.value)
+          pendingRef.current = { ms, atMs: Date.now() }
+          paint(ms)
+        },
+        onChange: (event) => {
+          const ms = Number(event.currentTarget.value)
+          pendingRef.current = { ms, atMs: Date.now() }
+          paint(ms)
+          dispatch(ms)
+        },
+        // No preventDefault: the control needs the pointer to start its own drag.
+        // No stopPropagation either — the mini row's wrapper stops it upstream, so
+        // clicking the bar still never opens the panel.
+        onPointerDown: (event) => {
+          dragRef.current = { pointerId: event.pointerId }
+          setDragging(true)
+        },
+        onPointerUp: () => { dragRef.current = null; setDragging(false) },
+        onPointerCancel: () => { dragRef.current = null; setDragging(false) },
+      }),
       variant === 'sheet' ? h('div', { className: 'dshm-progress-bubble', ref: bubbleRef }, '0:00') : null)
     }
 
+    /**
+     * Volume, as the same native control. Volume commits on every `input` (it
+     * always did: it is local, has no round trip to lose, and there is no latch to
+     * fight), while the thumb is only written back from the host when the user is
+     * not the one holding it.
+     */
     function VolumeBar({ value, onChange }) {
       const rootRef = useRef(null)
+      const inputRef = useRef(null)
+      const paintedRef = useRef(null)
       const dragging = useRef(false)
-      useEffect(() => {
-        if (rootRef.current !== null) rootRef.current.style.setProperty('--p', String(Math.max(0, Math.min(1, value / 100))))
-      }, [value])
-      const apply = (event) => {
+
+      const paint = (percent) => {
         const node = rootRef.current
-        if (node === null) return
-        const rect = node.getBoundingClientRect()
-        if (rect.width === 0) return
-        const fraction = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width))
-        node.style.setProperty('--p', String(fraction))
-        onChange(Math.round(fraction * 100))
+        const input = inputRef.current
+        if (node === null || input === null) return
+        const next = nextPaint(paintedRef.current, { fraction: percent / 100, label: `${percent}%` })
+        if (next.write === false) return
+        paintedRef.current = { fraction: next.fraction, label: next.label }
+        node.style.setProperty('--p', String(next.fraction))
+        input.setAttribute('aria-valuetext', next.label)
+        // The host echoes the volume back after every command; writing that echo
+        // over a drag in progress would fight the finger.
+        if (dragging.current === false) input.value = String(percent)
       }
+
+      useLayoutEffect(() => { paint(Math.round(value)) }, [])
+      useEffect(() => {
+        if (dragging.current === false) paint(Math.round(value))
+      }, [value])
+
       return h('div', {
         ref: rootRef,
         className: 'dshm-progress',
-        'data-variant': 'sheet',
-        style: { height: 18 },
-        role: 'meter',
+        'data-variant': 'volume',
+      },
+      h('input', {
+        ref: inputRef,
+        className: 'dshm-range',
+        type: 'range',
+        min: 0,
+        max: 100,
+        step: 1,
+        tabIndex: -1,
         'aria-label': t('np.volume'),
-        'aria-valuemin': 0,
-        'aria-valuemax': 100,
-        'aria-valuenow': Math.round(value),
-        onPointerDown: (event) => {
-          event.stopPropagation()
-          dragging.current = true
-          try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* unsupported */ }
-          apply(event)
+        onInput: (event) => {
+          const percent = Math.max(0, Math.min(100, Math.round(Number(event.currentTarget.value))))
+          paint(percent)
+          onChange(percent)
         },
-        onPointerMove: (event) => { if (dragging.current) apply(event) },
-        onPointerUp: (event) => {
-          dragging.current = false
-          try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* unsupported */ }
-          apply(event)
-        },
-      }, h('div', { className: 'dshm-progress-track' }, h('div', { className: 'dshm-progress-fill' })),
-        h('div', { className: 'dshm-progress-thumb' }))
+        onPointerDown: () => { dragging.current = true },
+        onPointerUp: () => { dragging.current = false },
+        onPointerCancel: () => { dragging.current = false },
+      }))
     }
 
     function TimeText({ getPlayer, className }) {
@@ -2660,7 +2773,7 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
           h('h3', { className: 'dshm-set-title' }, t('set.playback')),
           h('div', { className: 'dshm-set-row' },
             h('div', { className: 'dshm-set-row-label' }, t('set.defaultVolume')),
-            h('div', { style: { width: 160 } }, h(VolumeBar, {
+            h('div', { className: 'dshm-vol', style: { width: 160 } }, h(VolumeBar, {
               value: prefs.defaultVolume ?? 100,
               onChange: (value) => setPref({ defaultVolume: value }),
             })),

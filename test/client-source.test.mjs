@@ -170,13 +170,10 @@ test('the client binds no keys of its own (D-28)', () => {
   assert.deepEqual(
     source.match(/role: 'slider'/g) ?? [],
     [],
-    'a role="slider" while the plugin binds no keys would promise a keyboard contract it does not keep (D-28) — the native range control is the way back (D-34)',
+    'a hand-written slider role means the plugin is drawing the control again; the native range gives it implicitly (D-36)',
   )
-  assert.deepEqual(
-    source.match(/tabIndex/g) ?? [],
-    [],
-    'no div is made focusable; nothing would answer the keys it invites',
-  )
+  // `tabIndex` is not banned outright any more: D-36 puts the two ranges *out* of
+  // the tab order with `tabIndex={-1}`. The paired rule lives in the next test.
   // The survivors, spelled out so the rule cannot drift by accident.
   const escapes = source.match(/'Escape'/g) ?? []
   assert.equal(escapes.length, 3, 'Escape may only close an open surface (popover, menu, dialog)')
@@ -184,8 +181,64 @@ test('the client binds no keys of its own (D-28)', () => {
     'no action key anywhere in the client')
 })
 
-test('the queue panel keeps a failed read apart from loading (CUI-02)', () => {
+/**
+ * D-36: both bars are native ranges, and neither is a tab stop.
+ *
+ * The promise is "no keyboard path of our own" (D-28), not "no keyboard at all":
+ * a range answers the arrow keys once something focuses it, and that is the
+ * platform's behaviour, not a binding in this file. What this file does decide is
+ * the focus order — so `tabIndex={-1}` is pinned to the controls themselves: every
+ * range carries one, and nothing else carries one.
+ */
+test('both bars are native ranges and neither is a tab stop (D-36)', () => {
   const source = readFileSync(clientPath, 'utf8')
+
+  for (const [name, from, to] of [
+    ['progress', 'function ProgressBar(', 'function VolumeBar('],
+    ['volume', 'function VolumeBar(', 'function TimeText('],
+  ]) {
+    const component = sliceBetween(source, from, to)
+    assert.match(component, /type: 'range'/, `the ${name} bar is a native range`)
+    assert.match(component, /tabIndex: -1/, `the ${name} bar stays out of the host's tab order (D-36)`)
+    assert.match(component, /'aria-label'/, `the ${name} bar keeps its accessible name`)
+    assert.match(component, /aria-valuetext/, `the ${name} bar announces time/percent, never raw units`)
+  }
+
+  // Two facts, spelled as invariants rather than counts: a shared props builder
+  // (one `range` literal feeding both bars) is a legitimate refactor, and the old
+  // `=== 2` literals would have failed it for no behavioural reason.
+  const ranges = (source.match(/type: 'range'/g) ?? []).length
+  const tabStops = (source.match(/tabIndex/g) ?? []).length
+  assert.ok(ranges >= 1, 'neither bar is a native range any more')
+  assert.equal(tabStops, ranges, 'a `tabIndex` exists for every range and for nothing else')
+  assert.deepEqual(
+    source.match(/role: '(progressbar|meter)'/g) ?? [],
+    [],
+    'the read-only roles were the false claim B36 named; the native control declares itself (D-34 → D-36)',
+  )
+  assert.ok(!/onKeyDown|onKeyUp|onKeyPress/.test(source), 'no key props anywhere in the client (D-28)')
+})
+
+/**
+ * CSS locality: a rule that dresses a class nothing renders is intent with no
+ * reader. `.dshm-vol` sat in the stylesheet describing "the settings bar has no
+ * thumb" while the settings row used a plain `<div>` — the rule matched nothing,
+ * the bar wore the panel's thumb, and no behavioural test could see it, because
+ * "never applied" is not a behaviour.
+ *
+ * `client.js` is one file, so the question is a string comparison: a dressed class
+ * has to appear somewhere outside the CSS block.
+ */
+test('every class the stylesheet dresses is applied somewhere (CSS locality)', () => {
+  const source = readFileSync(clientPath, 'utf8')
+  const css = sliceBetween(source, 'const CSS = `', '\n`')
+  const rendered = source.replace(css, '')
+  const dressed = new Set([...css.matchAll(/\.(dshm-[a-z0-9-]+)/g)].map((m) => m[1]))
+  const orphans = [...dressed].filter((name) => !rendered.includes(name))
+  assert.deepEqual(orphans, [], 'stylesheet rules for classes nothing renders: ' + orphans.join(', '))
+})
+
+test('the queue panel keeps a failed read apart from loading (CUI-02)', () => {  const source = readFileSync(clientPath, 'utf8')
   const panel = sliceBetween(source, 'function QueuePanel(', 'function LyricsPanel(')
   assert.match(panel, /setReadState\('failed'\)/, 'a rejected read ends as failed')
   assert.match(panel, /setReadState\('ready'\)/, 'a resolved read ends as ready')
@@ -210,13 +263,15 @@ test('the seek latch is judged by sample time, not by a duration threshold (D-27
   const source = readFileSync(clientPath, 'utf8')
   const bar = sliceBetween(source, 'function ProgressBar(', 'function VolumeBar(')
 
-  assert.match(bar, /resolveSeek\(pendingRef\.current, player, Date\.now\(\)\)/,
-    'the latch decision must come from the playhead module')
+  // The seam is "ask the module, write the answer back, interpolate through the one
+  // clock reader" — not the exact argument spelling, which forbade threading a
+  // clock in and went red on a legitimate refactor in 2026-11-15.
+  assert.match(bar, /resolveSeek\(/, 'the latch decision must come from the playhead module')
   assert.match(bar, /pendingRef\.current = latched\.pending/,
     'the release must be written back, otherwise the request never clears')
   assert.ok(!/\b(1600|900)\b/.test(bar), 'the old duration thresholds must not come back')
-  assert.match(bar, /fractionOf\(anchorFor\(player\), performance\.now\(\)\)/,
-    'the painted fraction is interpolated on the monotonic clock')
+  assert.match(bar, /estimateMs\(player\)/,
+    'the painted position is interpolated on the monotonic clock — through `estimateMs`, which is the one place in the file that reads it')
 })
 
 /**
