@@ -33,16 +33,14 @@ test('CHANGELOG has no duplicated bullet', () => {
   assert.deepEqual(duplicates, [], 'a bullet repeated across sections (copy-paste accident):\n  ' + duplicates.join('\n  '))
 })
 
-test('the tooling line lives in [Unreleased] only', () => {
-  // The new tools are unshipped work: they belong to the open section, which is
-  // everything above the first `## [x.y.z]` heading.
+test('each tool entry is claimed by exactly one version', () => {
+  // The accident this guards against: a PowerShell `.Replace('**Changed**', …)`
+  // rewrote *every* occurrence, so one new tool line landed in all seven historical
+  // versions at once. Counting per entry keeps the guard alive after a release
+  // (when the tools genuinely ship) instead of tying it to "still unreleased".
   const lines = changelog.split('\n')
-  const firstRelease = lines.findIndex((line) => /^## \[[0-9]/.test(line))
-  assert.ok(firstRelease > 0, 'CHANGELOG must have a released section to divide against')
-  const open = lines.slice(0, firstRelease).join('\n')
-  const shipped = lines.slice(firstRelease).join('\n')
   for (const tool of ['scripts/syntax-check.mjs', 'scripts/test-repeat.mjs']) {
-    assert.ok(open.includes(tool), `${tool} must be recorded in [Unreleased]`)
-    assert.ok(!shipped.includes(tool), `${tool} is unshipped work; it must not appear under a released version`)
+    const hits = lines.filter((line) => line.trimStart().startsWith('- ') && line.includes(tool))
+    assert.equal(hits.length, 1, `${tool} must be listed by exactly one version, found ${hits.length}`)
   }
 })
