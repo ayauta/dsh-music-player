@@ -20,7 +20,8 @@ permissions:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    # 这个仓库的 176 个测试只在 Windows 上绿过（mpv 命名管道、路径假设），别拿第一次发版去赌 Linux。
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
