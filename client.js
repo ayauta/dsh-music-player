@@ -25,7 +25,7 @@ window.__ModuleLoader__.load({
     // `node scripts/bundle-id.mjs --write`; `npm test` fails while it is stale.
     // Module scope on purpose: bundles are concatenated into one classic script,
     // where a top-level `const` would collide with another module's.
-    const BUNDLE_ID = 'dshm-b250ad1e8c34' // dsh-music-bundle-id
+    const BUNDLE_ID = 'dshm-b47547df6ed0' // dsh-music-bundle-id
 const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by motion-source test)
 
     const React = require('react')
@@ -1201,6 +1201,28 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
      * implicit `role=slider` is still honest — unlike the `progressbar` this
      * replaces, which ARIA defines as always read-only while we let people drag it.
      */
+    /**
+     * Where a pointer sits on a range, as a 0..1 fraction of its **travel**.
+     *
+     * The thumb's centre runs from `thumb/2` to `width - thumb/2`, not from 0 to
+     * width, so this is the formula the gradient fill and the drag bubble already
+     * use. The thumb size is read back from the CSS (`--dshm-thumb`), so the
+     * drawing, the bubble and the hit test cannot disagree.
+     */
+    function fractionAtClientX(node, clientX, thumbPx) {
+      if (node === null) return 0
+      const rect = node.getBoundingClientRect()
+      const travel = rect.width - thumbPx
+      if (!(travel > 0)) return 0
+      return Math.min(1, Math.max(0, (clientX - rect.left - thumbPx / 2) / travel))
+    }
+
+    function thumbPxOf(node) {
+      if (node === null) return 0
+      const px = Number.parseFloat(getComputedStyle(node).getPropertyValue('--dshm-thumb'))
+      return Number.isFinite(px) ? px : 0
+    }
+
     const SEEK_STEP_MS = 1000
 
     function ProgressBar({ getPlayer, onSeek, variant = 'sheet' }) {
@@ -1245,18 +1267,16 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
         const input = inputRef.current
         if (node === null || input === null) return
         const duration = durationOf()
-        if (dragRef.current === null) {
-          const max = String(Math.round(Math.max(0, duration)))
-          if (input.max !== max) {
-            input.max = max
-            writtenRef.current = -1
-          }
-          const value = quantise(ms, duration)
-          if (writtenRef.current !== value) {
-            writtenRef.current = value
-            input.value = String(value)
-            input.setAttribute('aria-valuetext', formatTime(value))
-          }
+        const max = String(Math.round(Math.max(0, duration)))
+        if (input.max !== max) {
+          input.max = max
+          writtenRef.current = -1
+        }
+        const value = quantise(ms, duration)
+        if (writtenRef.current !== value) {
+          writtenRef.current = value
+          input.value = String(value)
+          input.setAttribute('aria-valuetext', formatTime(value))
         }
         const fraction = duration > 0 ? Math.min(1, Math.max(0, ms / duration)) : 0
         const next = nextPaint(paintedRef.current, {
@@ -1303,6 +1323,20 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
           })
       }
 
+      /**
+       * Move the bar to the pointer without asking the host yet. The request waits
+       * for the release, exactly like this component always did.
+       */
+      const seekFromPointer = (event) => {
+        const duration = durationOf()
+        if (!(duration > 0)) return null
+        const thumb = dragRef.current?.thumb ?? thumbPxOf(rootRef.current)
+        const ms = Math.round(fractionAtClientX(rootRef.current, event.clientX, thumb) * duration)
+        pendingRef.current = { ms, atMs: Date.now() }
+        paint(ms)
+        return ms
+      }
+
       // Before the first browser paint: a bar that starts at zero and jumps to the
       // real position one frame later is a flash, not a load.
       useLayoutEffect(() => { paint(currentMs()) }, [])
@@ -1334,8 +1368,8 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
         tabIndex: -1,
         'aria-label': t('np.seek'),
         onInput: (event) => {
-          // Dragging only paints. The request waits for `change`, which the control
-          // fires once on release — the same shape this component always had.
+          // Keyboard only (or a native drag, in a host that does not cancel the
+          // pointerdown): paint immediately, ask the host on `change`.
           const ms = Number(event.currentTarget.value)
           pendingRef.current = { ms, atMs: Date.now() }
           paint(ms)
@@ -1346,14 +1380,32 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
           paint(ms)
           dispatch(ms)
         },
-        // No preventDefault: the control needs the pointer to start its own drag.
-        // No stopPropagation either — the mini row's wrapper stops it upstream, so
-        // clicking the bar still never opens the panel.
+        // The control's own drag is not reliable here: a host that calls
+        // `preventDefault()` on pointerdown (the DSH shell does) cancels the
+        // default action, and the thumb then stops following the pointer — that is
+        // exactly the "slider is dead" report of 2026-11-15. So this file owns the
+        // pointer math, while the control keeps its value, its `role=slider`, its
+        // ARIA and (for whatever focuses it) the arrow keys.
         onPointerDown: (event) => {
-          dragRef.current = { pointerId: event.pointerId }
+          if (event.button !== 0 && event.pointerType === 'mouse') return
+          event.preventDefault()
+          dragRef.current = { pointerId: event.pointerId, thumb: thumbPxOf(rootRef.current) }
           setDragging(true)
+          try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* unsupported */ }
+          seekFromPointer(event)
         },
-        onPointerUp: () => { dragRef.current = null; setDragging(false) },
+        onPointerMove: (event) => {
+          if (dragRef.current === null) return
+          seekFromPointer(event)
+        },
+        onPointerUp: (event) => {
+          if (dragRef.current === null) return
+          const ms = seekFromPointer(event)
+          try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* unsupported */ }
+          dragRef.current = null
+          setDragging(false)
+          if (ms !== null) dispatch(ms)
+        },
         onPointerCancel: () => { dragRef.current = null; setDragging(false) },
       }),
       variant === 'sheet' ? h('div', { className: 'dshm-progress-bubble', ref: bubbleRef }, '0:00') : null)
@@ -1376,13 +1428,26 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
         const input = inputRef.current
         if (node === null || input === null) return
         const next = nextPaint(paintedRef.current, { fraction: percent / 100, label: `${percent}%` })
-        if (next.write === false) return
-        paintedRef.current = { fraction: next.fraction, label: next.label }
-        node.style.setProperty('--p', String(next.fraction))
-        input.setAttribute('aria-valuetext', next.label)
+        if (next.write === true) {
+          paintedRef.current = { fraction: next.fraction, label: next.label }
+          node.style.setProperty('--p', String(next.fraction))
+          input.setAttribute('aria-valuetext', next.label)
+        }
         // The host echoes the volume back after every command; writing that echo
         // over a drag in progress would fight the finger.
-        if (dragging.current === false) input.value = String(percent)
+        if (dragging.current === false && Number(input.value) !== percent) input.value = String(percent)
+      }
+
+      /** Same pointer contract as the progress bar: we own the math, the host may cancel the default. */
+      const percentFromPointer = (event) => {
+        const fraction = fractionAtClientX(rootRef.current, event.clientX, thumbPxOf(rootRef.current))
+        return Math.max(0, Math.min(100, Math.round(fraction * 100)))
+      }
+      const applyPointer = (event) => {
+        const percent = percentFromPointer(event)
+        paint(percent)
+        onChange(percent)
+        return percent
       }
 
       useLayoutEffect(() => { paint(Math.round(value)) }, [])
@@ -1405,12 +1470,25 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
         tabIndex: -1,
         'aria-label': t('np.volume'),
         onInput: (event) => {
+          // Keyboard, or a native drag in a host that leaves the default action alone.
           const percent = Math.max(0, Math.min(100, Math.round(Number(event.currentTarget.value))))
           paint(percent)
           onChange(percent)
         },
-        onPointerDown: () => { dragging.current = true },
-        onPointerUp: () => { dragging.current = false },
+        onPointerDown: (event) => {
+          if (event.button !== 0 && event.pointerType === 'mouse') return
+          event.preventDefault()
+          dragging.current = true
+          try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* unsupported */ }
+          applyPointer(event)
+        },
+        onPointerMove: (event) => { if (dragging.current) applyPointer(event) },
+        onPointerUp: (event) => {
+          if (!dragging.current) return
+          applyPointer(event)
+          try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* unsupported */ }
+          dragging.current = false
+        },
         onPointerCancel: () => { dragging.current = false },
       }))
     }

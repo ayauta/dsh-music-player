@@ -202,6 +202,10 @@ test('both bars are native ranges and neither is a tab stop (D-36)', () => {
     assert.match(component, /tabIndex: -1/, `the ${name} bar stays out of the host's tab order (D-36)`)
     assert.match(component, /'aria-label'/, `the ${name} bar keeps its accessible name`)
     assert.match(component, /aria-valuetext/, `the ${name} bar announces time/percent, never raw units`)
+    // The DSH shell cancels `pointerdown` before it reaches the control, which
+    // kills a native range drag outright (2026-11-15: "the slider is dead"). So
+    // the bar must keep its own pointer path; losing it would look like this.
+    assert.match(component, /setPointerCapture/, `the ${name} bar must own its pointer path (the host cancels the native drag)`)
   }
 
   // Two facts, spelled as invariants rather than counts: a shared props builder
