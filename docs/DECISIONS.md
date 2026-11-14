@@ -650,3 +650,10 @@
 - **验证**：`npm run check` **165/165**；`npm run test:repeat -- test/player-transport.test.mjs 5` **0/5 red**；
   真实 CSS 用 headless Edge 单独渲染核对（不走宿主）。**L3 四条**见 `docs/handoffs/2026-11-15.md` §5。
   变异对照：删掉 `tabIndex` → 守卫红；加回 `role: 'meter'` → 守卫红；把在途合并关掉 → playhead 4 例红。
+- **补记（2026-11-15，当日晚间：指针路径改回我们自己）**：D-36 把"指针拖动"交给了平台，
+  但 DSH 外壳会在 `pointerdown` 上调用 `preventDefault()`（捕获阶段），**被取消默认动作的原生 range 不会开始拖动** ——
+  用户看到的就是"滑条失效"（点了没反应 / 松手跳回）。旧版能用，恰恰因为它自己 `preventDefault` 并自己算 clientX。
+  现在两条滑条自己接管指针（`preventDefault` + `setPointerCapture` + clientX → 行程分数），
+  **语义仍归平台**（隐式 `role=slider`、`aria-valuetext`、方向键只在被聚焦时由 UA 响应），**Tab 停靠点仍然没有**。
+  坐标与填充/气泡共用同一条公式（`--dshm-thumb` 的行程内缩），三者不会互相打架；
+  守卫钉住"每条滑条必须有 `setPointerCapture`"，防止有人再把拖动交回默认动作。
