@@ -249,22 +249,23 @@ test('a late status answer cannot overwrite a newer one (B34)', () => {
   const fn = sliceBetween(source, 'async function refreshStatus()', 'async function command(')
 
   assert.match(fn, /const requestId = statusSeq \+= 1/, 'the request is numbered when it is issued')
-  assert.match(fn, /if \(!acceptResponse\(lastAppliedStatusId, requestId\)\) return null/,
-    'an answer older than the applied one is dropped')
-  assert.match(fn, /lastAppliedStatusId = requestId/, 'the applied number is remembered')
-  assert.ok(fn.indexOf('acceptResponse') < fn.indexOf('session.setStatus'),
-    'the verdict comes before the session is touched')
 
-  // The failure path is part of the same channel: a stale *failure* must not
-  // paint "error" over an answer that already landed, and an applied failure
-  // still advances the number so an older success cannot revive it.
-  const catchBlock = fn.slice(fn.indexOf('} catch (error) {'))
-  assert.ok(catchBlock.includes('acceptResponse'),
-    'the gate covers the failure path too — otherwise a stale failure overwrites a newer answer (D-32)')
-  assert.ok(catchBlock.indexOf('acceptResponse') < catchBlock.indexOf('session.set'),
-    'the verdict comes before the session is touched on the failure path')
-  assert.match(catchBlock, /lastAppliedStatusId = requestId/,
-    'an applied failure advances the number, so an older success cannot revive it')
+  // Both outcomes pass the gate. The session write itself is a callback handed to
+  // `commitAnswer`, never called inline — that is what makes the gate unskippable.
+  assert.deepEqual((fn.match(/commitAnswer\(requestId/g) ?? []).length, 2,
+    'the success answer and the failure answer both go through commitAnswer')
+  assert.ok(fn.includes('() => session.setStatus(status)'), 'the success write is a callback, not a direct call')
+  assert.ok(fn.includes("() => session.set({ phase: 'error'"), 'the failure write is a callback too')
+  const inline = [...fn.matchAll(/session\.set/g)].filter((m) => !fn.slice(Math.max(0, m.index - 6), m.index).includes('=>'))
+  assert.deepEqual(inline.map((m) => fn.slice(m.index, m.index + 24)), [],
+    'the session is written only through the callback handed to commitAnswer')
+
+  const gate = sliceBetween(source, 'function commitAnswer(requestId, apply) {', 'async function refreshStatus()')
+  const verdict = gate.indexOf('acceptResponse(lastAppliedStatusId, requestId)')
+  const applied = gate.indexOf('lastAppliedStatusId = requestId')
+  const effect = gate.indexOf('apply()')
+  assert.ok(verdict > 0 && verdict < applied, 'the verdict comes before the number moves')
+  assert.ok(applied < effect, 'and the number moves before anything is applied')
 })
 
 test('no component calls a hook after an early return (React #310)', () => {

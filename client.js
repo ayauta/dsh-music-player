@@ -23,7 +23,7 @@ window.__ModuleLoader__.load({
     // `node scripts/bundle-id.mjs --write`; `npm test` fails while it is stale.
     // Module scope on purpose: bundles are concatenated into one classic script,
     // where a top-level `const` would collide with another module's.
-    const BUNDLE_ID = 'dshm-bb35f28e6e40' // dsh-music-bundle-id
+    const BUNDLE_ID = 'dshm-847e9b43df0b' // dsh-music-bundle-id
 const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by motion-source test)
 
     const React = require('react')
@@ -749,22 +749,30 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
     let statusSeq = 0
     let lastAppliedStatusId = 0
 
+    /**
+     * Apply an answer only if no fresher request has been answered already.
+     *
+     * Both outcomes of `refreshStatus` go through here — success and failure —
+     * because the gate is about *which request* the answer belongs to, not about
+     * what it says (D-32): a slow failure must not paint "error" over an answer
+     * that already landed, and an applied failure still advances the number so
+     * an older success cannot revive afterwards.
+     */
+    function commitAnswer(requestId, apply) {
+      if (!acceptResponse(lastAppliedStatusId, requestId)) return false
+      lastAppliedStatusId = requestId
+      apply()
+      return true
+    }
+
     async function refreshStatus() {
       const requestId = statusSeq += 1
       try {
         const status = await call('status', {})
-        if (!acceptResponse(lastAppliedStatusId, requestId)) return null
-        lastAppliedStatusId = requestId
-        session.setStatus(status)
+        if (!commitAnswer(requestId, () => session.setStatus(status))) return null
         return status
       } catch (error) {
-        // The gate covers the failure path too (D-32): a slow failure belongs to
-        // an older request and must not paint "error" over an answer that already
-        // landed. An applied failure still advances the number, so an older
-        // success cannot revive afterwards — the next poll is 1 Hz away anyway.
-        if (!acceptResponse(lastAppliedStatusId, requestId)) return null
-        lastAppliedStatusId = requestId
-        session.set({ phase: 'error', error: String(error?.message ?? error) })
+        commitAnswer(requestId, () => session.set({ phase: 'error', error: String(error?.message ?? error) }))
         return null
       }
     }
