@@ -1,0 +1,919 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>原型 · 进度条/音量条换原生 range（D-34）</title>
+<!--
+  原型（throwaway，不是产品代码）。问题与方案：
+    问题：今天自绘的 .dshm-progress（4px 轨、12px 滑块、悬停加粗、拖动气泡）怎么映射到
+          <input type="range"> + appearance:none + ::-webkit-slider-*，同时留住 20px / 10px 命中区。
+    方案：0 = 现状对照（自绘）；A = 纯伪元素；B = accent-color 薄皮肤；C = DOM 轨 + 平台滑块。
+    切换：?variant=0|A|B|C；底栏 ‹ › 或 ← →（焦点在滑块上时不抢键）。
+    跑法：双击本文件，无服务、无依赖、无构建。
+    假宿主：1 Hz 采样 + 120ms seek 延迟 + 同款"等宿主看见"的闩锁（D-27），只为看回弹与写入次数。
+-->
+<style>
+/* ─────────────────────────── tokens（近似 DSH 别名，仅原型用） ─────────────────────── */
+:root {
+  --ease-out: cubic-bezier(.23, 1, .32, 1);
+  --dur-hover: 130ms;
+  --dur-thumb: 110ms;
+  --thumb-shadow: 0 1px 4px rgba(0, 0, 0, .28);
+  --font: -apple-system, "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+[data-theme="light"] {
+  color-scheme: light;
+  --label-primary: #1b1b1f;
+  --label-secondary: #6e6e77;
+  --bg-base: #ffffff;
+  --bg-layer: #f3f3f5;
+  --bg-overlay: #ffffff;
+  --border-l1: #e5e5ea;
+  --border-l2: #cfcfd6;
+  --brand: #2f6df6;
+  --slot: color-mix(in srgb, var(--label-primary) 14%, transparent);
+  --slot-soft: color-mix(in srgb, var(--label-primary) 12%, transparent);
+}
+[data-theme="dark"] {
+  color-scheme: dark;
+  --label-primary: #f2f2f5;
+  --label-secondary: #a1a1ab;
+  --bg-base: #16161a;
+  --bg-layer: #0f0f12;
+  --bg-overlay: #1d1d22;
+  --border-l1: #2d2d35;
+  --border-l2: #3b3b45;
+  --brand: #7e96ff;
+  --slot: color-mix(in srgb, var(--label-primary) 16%, transparent);
+  --slot-soft: color-mix(in srgb, var(--label-primary) 12%, transparent);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  font-family: var(--font);
+  background: var(--bg-layer);
+  color: var(--label-primary);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  padding: 18px 18px 84px;
+}
+
+/* ─────────────────────────────────── 页面骨架 ─────────────────────────────────── */
+.head { max-width: 1080px; margin: 0 auto 14px; }
+.head h1 { font-size: 15px; font-weight: 650; margin: 0 0 5px; letter-spacing: -.01em; }
+.head p { margin: 0; font-size: 12px; line-height: 1.65; color: var(--label-secondary); max-width: 800px; }
+.head code { font-family: var(--mono); font-size: 11px; background: color-mix(in srgb, var(--label-primary) 8%, transparent);
+  padding: 1px 4px; border-radius: 4px; }
+
+.layout { max-width: 1080px; margin: 0 auto; display: flex; gap: 18px; align-items: flex-start; }
+
+.stage { flex: 0 0 auto; width: 336px; display: flex; flex-direction: column; gap: 14px; }
+.stage-label { font-size: 10.5px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--label-secondary); margin: 0 0 -6px 2px; }
+
+/* ───────────────────────────── 播放面板（贴近真实 300px 版式） ───────────────────── */
+.panel { width: 300px; background: var(--bg-overlay); border: 1px solid var(--border-l1);
+  border-radius: 14px; box-shadow: 0 20px 48px rgba(0, 0, 0, .18); padding: 10px 16px 16px; }
+.panel-art { width: 100%; aspect-ratio: 1 / 1; border-radius: 10px; margin: 4px 0 0;
+  background: linear-gradient(150deg, #9fb8c8 0%, #d6dfd2 45%, #8f9f7c 100%);
+  display: grid; place-items: center; color: #26312a; font-size: 11px; letter-spacing: .18em; }
+.panel-name { font-size: 17px; font-weight: 600; letter-spacing: -.01em; margin-top: 14px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.panel-sub { font-size: 13px; color: var(--label-secondary); margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.panel-progress { margin-top: 14px; }
+.panel-times { display: flex; justify-content: space-between; align-items: baseline; margin-top: 4px;
+  font-size: 11px; color: var(--label-secondary); font-variant-numeric: tabular-nums; }
+.transport { display: flex; align-items: center; justify-content: center; gap: 18px; padding: 14px 0 0; }
+.tbtn { width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent;
+  color: var(--label-primary); display: grid; place-items: center; cursor: pointer;
+  transition: background-color var(--dur-hover) ease, transform 110ms var(--ease-out); }
+.tbtn:hover { background: color-mix(in srgb, var(--label-primary) 8%, transparent); }
+.tbtn:active { transform: scale(.94); }
+.tbtn svg { width: 18px; height: 18px; fill: currentColor; }
+.volume-row { display: flex; align-items: center; gap: 8px; padding: 9px 0 0; }
+.vbtn { width: 28px; height: 28px; border: 0; border-radius: 8px; background: transparent;
+  color: var(--label-primary); display: grid; place-items: center; cursor: pointer; flex: none; }
+.vbtn:hover { background: color-mix(in srgb, var(--label-primary) 8%, transparent); }
+.vbtn svg { width: 16px; height: 16px; fill: currentColor; }
+
+/* ───────────────────────────── 迷你行（侧栏，贴近真实版式） ───────────────────── */
+.mini { position: relative; width: 264px; padding: 6px 8px 15px; border-radius: 7px;
+  background: color-mix(in srgb, var(--label-primary) 4%, transparent); }
+.mini-row { display: flex; align-items: center; gap: 9px; }
+.mini-cover { width: 40px; height: 40px; border-radius: 6px; flex: none;
+  background: linear-gradient(150deg, #9fb8c8, #8f9f7c); }
+.mini-info { min-width: 0; flex: 1 1 auto; }
+.mini-title { font-size: 12.5px; font-weight: 600; line-height: 1.2; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.mini-sub { font-size: 11px; line-height: 1.2; color: var(--label-secondary); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.mini-keys { display: flex; gap: 2px; flex: none; }
+.mini-keys svg { width: 13px; height: 13px; fill: var(--label-primary); }
+.mini-track { position: absolute; left: 53px; right: 8px; bottom: 3px; }
+
+/* 设置里的音量（dshm-vol：124px、无滑块） */
+.settings { width: 264px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border-l1);
+  background: var(--bg-overlay); display: flex; align-items: center; gap: 10px; }
+.settings > span { font-size: 12px; color: var(--label-secondary); flex: none; }
+.settings .slot { width: 124px; flex: none; }
+
+/* ─────────────────────────── 滑条的公共几何（命中区/轨/滑块） ───────────────────── */
+.bar { position: relative; width: 100%; --track-h: 4px; --thumb: 12px; --slot-c: var(--slot); --fill-c: var(--label-primary); }
+.bar[data-surface="sheet"] { height: 20px; }
+.bar[data-surface="mini"] { height: 10px; --track-h: 3px; --thumb: 10px; }
+.bar[data-surface="panelvol"] { height: 18px; --track-h: 3px; --thumb: 12px; --slot-c: var(--slot-soft); }
+.bar[data-surface="settingsvol"] { height: 18px; --track-h: 3px; --thumb: 0px; --fill-c: var(--label-secondary); }
+
+/* 悬停/拖动加粗（DESIGN §7：面板 4→6、迷你 3→5；音量不加粗） */
+.bar[data-surface="sheet"]:hover, .bar[data-surface="sheet"][data-dragging="true"] { --track-h: 6px; }
+.bar[data-surface="mini"]:hover, .bar[data-surface="mini"][data-dragging="true"] { --track-h: 5px; }
+
+.bubble { position: absolute; bottom: calc(100% + 6px); z-index: 3;
+  left: calc(var(--p, 0) * (100% - var(--thumb)) + var(--thumb) / 2);
+  transform: translateX(-50%); padding: 2px 7px; border-radius: 6px; white-space: nowrap;
+  background: var(--bg-overlay); border: 1px solid var(--border-l1);
+  font-size: 11px; font-weight: 600; letter-spacing: .01em; color: var(--label-primary);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .18);
+  opacity: 0; transition: opacity var(--dur-thumb) var(--ease-out); pointer-events: none; }
+.bar[data-dragging="true"] .bubble { opacity: 1; }
+.bar[data-v="0"] .bubble { left: calc(var(--p, 0) * 100%); }
+.bar[data-inset="full"] .bubble { left: calc(var(--p, 0) * 100%); }
+
+/* ───────────────────────────── 0 · 现状（自绘，照抄 client.js:467-494） ─────────────── */
+.bar[data-v="0"] { display: flex; align-items: center; cursor: pointer; user-select: none; }
+.bar[data-v="0"] .track { position: relative; width: 100%; height: var(--track-h);
+  border-radius: 999px; overflow: hidden; background: var(--slot-c); }
+.bar[data-v="0"] .fill { height: 100%; width: 100%; transform-origin: left center;
+  transform: scaleX(var(--p, 0)); background: var(--fill-c); border-radius: 999px; }
+.bar[data-v="0"] .thumb { position: absolute; top: 50%; left: calc(var(--p, 0) * 100%);
+  width: var(--thumb); height: var(--thumb); margin: calc(var(--thumb) / -2) 0 0 calc(var(--thumb) / -2);
+  border-radius: 50%; background: var(--bg-base); border: 1px solid var(--border-l2);
+  box-shadow: var(--thumb-shadow); opacity: 0; transition: opacity var(--dur-thumb) var(--ease-out);
+  pointer-events: none; }
+.bar[data-v="0"][data-surface="sheet"] .thumb,
+.bar[data-v="0"][data-surface="panelvol"] .thumb,
+.bar[data-v="0"][data-surface="mini"]:hover .thumb,
+.bar[data-v="0"][data-dragging="true"] .thumb { opacity: 1; }
+.bar[data-v="0"][data-surface="settingsvol"] .thumb { opacity: 0; }
+
+/* ─────────────────── A · 纯伪元素（轨/填充/滑块全交平台绘制） ───────────────────── */
+.bar[data-v="A"] .range, .bar[data-v="B"] .range, .bar[data-v="C"] .range {
+  position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0;
+  background: transparent; cursor: pointer;
+  -webkit-appearance: none; appearance: none;
+}
+/* 轨 + 填充：填充止于滑块圆心（= UA 行程），而不是容器宽度 */
+.bar[data-v="A"] .range::-webkit-slider-runnable-track {
+  height: var(--track-h); border-radius: 999px;
+  background: linear-gradient(to right,
+    var(--fill-c) 0 calc(var(--p, 0) * (100% - var(--thumb)) + var(--thumb) / 2),
+    var(--slot-c) calc(var(--p, 0) * (100% - var(--thumb)) + var(--thumb) / 2) 100%);
+}
+.bar[data-v="A"] .range::-webkit-slider-thumb,
+.bar[data-v="C"] .range::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: var(--thumb); height: var(--thumb); border-radius: 50%;
+  background: var(--bg-base); border: 1px solid var(--border-l2);
+  box-shadow: var(--thumb-shadow);
+  margin-top: calc((var(--track-h) - var(--thumb)) / 2);
+  opacity: 0; transition: opacity var(--dur-thumb) var(--ease-out);
+}
+.bar[data-v="A"][data-surface="sheet"] .range::-webkit-slider-thumb,
+.bar[data-v="A"][data-surface="panelvol"] .range::-webkit-slider-thumb,
+.bar[data-v="A"][data-surface="mini"] .range:hover::-webkit-slider-thumb,
+.bar[data-v="A"][data-dragging="true"] .range::-webkit-slider-thumb,
+.bar[data-v="C"][data-surface="sheet"] .range::-webkit-slider-thumb,
+.bar[data-v="C"][data-surface="panelvol"] .range::-webkit-slider-thumb,
+.bar[data-v="C"][data-surface="mini"] .range:hover::-webkit-slider-thumb,
+.bar[data-v="C"][data-dragging="true"] .range::-webkit-slider-thumb { opacity: 1; }
+.bar[data-surface="settingsvol"] .range::-webkit-slider-thumb { opacity: 0; }
+
+/* 全宽画法：填充到容器两端（今天左侧滑块会探出 6px 的那种几何） */
+.bar[data-inset="full"][data-v="A"] .range::-webkit-slider-runnable-track {
+  background: linear-gradient(to right,
+    var(--fill-c) 0 calc(var(--p, 0) * 100%),
+    var(--slot-c) calc(var(--p, 0) * 100%) 100%);
+}
+
+/* ─────────────────────── B · accent-color 薄皮肤（零伪元素、零 --p） ────────────────── */.bar[data-v="B"] .range { -webkit-appearance: auto; appearance: auto; accent-color: var(--label-primary); }
+.bar[data-v="B"][data-surface="panelvol"] .range,
+.bar[data-v="B"][data-surface="settingsvol"] .range { accent-color: var(--label-secondary); }
+
+/* ───────────────────── C · 双层：DOM 轨自绘 + 平台滑块/命中/键盘 ──────────────────── */
+.bar[data-v="C"] .rail { position: absolute; inset: 0; pointer-events: none; }
+.bar[data-v="C"] .track { position: absolute; left: 0; right: 0; top: 50%; height: var(--track-h);
+  transform: translateY(-50%); border-radius: 999px; background: var(--slot-c); }
+.bar[data-v="C"] .travel { position: absolute; top: 50%; height: var(--track-h);
+  transform: translateY(-50%); left: 0; right: calc(var(--thumb) / 2);
+  overflow: hidden; border-radius: 999px; }
+.bar[data-inset="full"][data-v="C"] .travel { left: 0; right: 0; }
+.bar[data-v="C"] .fill { height: 100%; width: 100%; transform-origin: left center;
+  transform: scaleX(var(--p, 0)); background: var(--fill-c); }
+.bar[data-v="C"] .range::-webkit-slider-runnable-track { height: var(--track-h); background: transparent; }
+
+/* 焦点环：A/C 画在命中区外框；B 由 UA 画 */
+.bar[data-v="A"] .range:focus-visible,
+.bar[data-v="C"] .range:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 999px; }
+
+/* 高对比度：轨道加粗保留（DESIGN §6.6） */
+[data-contrast="more"] .bar[data-surface="sheet"] { --track-h: 6px; }
+[data-contrast="more"] .bar[data-surface="mini"] { --track-h: 5px; }
+
+@media (prefers-reduced-motion: reduce) { * { transition-duration: 1ms !important; } }
+
+/* ───────────────────────────────────── HUD ──────────────────────────────────── */
+.hud { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.card { background: var(--bg-overlay); border: 1px solid var(--border-l1); border-radius: 10px; padding: 11px 12px; }
+.card h2 { font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--label-secondary); margin: 0 0 8px; }
+.seg { display: flex; flex-wrap: wrap; gap: 5px; }
+.seg button { font: inherit; font-size: 12px; padding: 4px 9px; border-radius: 7px; cursor: pointer;
+  border: 1px solid var(--border-l1); background: transparent; color: var(--label-primary);
+  transition: background-color var(--dur-hover) ease; }
+.seg button:hover { background: color-mix(in srgb, var(--label-primary) 7%, transparent); }
+.seg button[aria-pressed="true"] { background: var(--label-primary); color: var(--bg-overlay); border-color: transparent; }
+.seg button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.row { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+.row .k { font-size: 11.5px; color: var(--label-secondary); width: 62px; flex: none; }
+.kv { display: grid; grid-template-columns: 92px 1fr; gap: 4px 10px; font-size: 12px; margin: 0; }
+.kv dt { color: var(--label-secondary); }
+.kv dd { margin: 0; font-variant-numeric: tabular-nums; }
+.ok { color: #1f9d55; font-weight: 600; }
+.no { color: #d14343; font-weight: 600; }
+.mut { color: var(--label-secondary); }
+.log { font-family: var(--mono); font-size: 11px; line-height: 1.55; margin: 0; padding: 0; list-style: none;
+  height: 112px; overflow: hidden; }
+.log li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.log .t { color: var(--label-secondary); }
+.log .input { color: var(--brand); }
+.log .change { color: #1f9d55; }
+.log .ptr { color: var(--label-secondary); }
+.note { font-size: 11.5px; line-height: 1.65; color: var(--label-secondary); margin: 8px 0 0; }
+.note b { color: var(--label-primary); font-weight: 600; }
+.note code { font-family: var(--mono); font-size: 11px; }
+
+/* ───────────────────────── 底部方案切换（原型自身，产品里没有） ─────────────────── */
+.switcher { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 90;
+  display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 999px;
+  background: #111114; color: #f6f6f8; border: 1px solid #2b2b31; box-shadow: 0 14px 34px rgba(0, 0, 0, .32);
+  font-size: 12px; }
+.switcher button { width: 24px; height: 24px; border-radius: 50%; border: 0; cursor: pointer;
+  background: #26262c; color: #f6f6f8; font-size: 13px; line-height: 1; }
+.switcher button:hover { background: #33333b; }
+.switcher .label { min-width: 208px; text-align: center; font-variant-numeric: tabular-nums; }
+.switcher .hint { color: #9a9aa6; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="head">
+  <h1>进度条 / 音量条换原生 <code>&lt;input type="range"&gt;</code> · 视觉方案原型</h1>
+  <p>
+    0 是现状对照（自绘）。A / B / C 是三种落地取向，差别在<b>「谁画轨道、谁管命中与键盘」</b>，不是配色。
+    底栏 ‹ › 或 ← → 切换；焦点在滑块上时方向键归滑块（这正是要验的东西之一）。
+  </p>
+</div>
+
+<div class="layout">
+  <div class="stage">
+    <p class="stage-label">播放面板 · 300px（进度 + 音量）</p>
+    <div class="panel">
+      <div class="panel-art">COVER</div>
+      <div class="panel-name">于山</div>
+      <div class="panel-sub">兰音 Reine</div>
+      <div class="panel-progress">
+        <div id="mount-panel"></div>
+        <div class="panel-times"><span id="t-now">0:00</span><span id="t-left">-0:00</span></div>
+      </div>
+      <div class="transport">
+        <button class="tbtn" title="上一首"><svg viewBox="0 0 16 16"><path d="M4 3h1.6v10H4zM13 3v10L6.2 8z"/></svg></button>
+        <button class="tbtn" id="btn-play" title="播放/暂停"><svg viewBox="0 0 16 16" id="glyph-play"><path d="M4 2.5l9 5.5-9 5.5z"/></svg></button>
+        <button class="tbtn" title="下一首"><svg viewBox="0 0 16 16"><path d="M10.4 3H12v10h-1.6zM3 3v10l6.8-5z"/></svg></button>
+      </div>
+      <div class="volume-row">
+        <button class="vbtn" id="btn-mute" title="静音"><svg viewBox="0 0 16 16"><path d="M8 2.6 4.4 5.5H2v5h2.4L8 13.4zM10.3 5.2a3.8 3.8 0 0 1 0 5.6l-.9-.9a2.6 2.6 0 0 0 0-3.8z"/></svg></button>
+        <div id="mount-panelvol" style="flex:1 1 auto; min-width:0"></div>
+      </div>
+    </div>
+
+    <p class="stage-label">迷你行 · 侧栏（10px 命中区）</p>
+    <div class="mini">
+      <div class="mini-row">
+        <div class="mini-cover"></div>
+        <div class="mini-info">
+          <div class="mini-title">于山</div>
+          <div class="mini-sub">兰音 Reine</div>
+        </div>
+        <div class="mini-keys">
+          <svg viewBox="0 0 16 16"><path d="M4 3h1.6v10H4zM13 3v10L6.2 8z"/></svg>
+          <svg viewBox="0 0 16 16"><path d="M4 2.5l9 5.5-9 5.5z"/></svg>
+          <svg viewBox="0 0 16 16"><path d="M10.4 3H12v10h-1.6zM3 3v10l6.8-5z"/></svg>
+        </div>
+      </div>
+      <div class="mini-track"><div id="mount-mini"></div></div>
+    </div>
+
+    <p class="stage-label">设置里的音量 · 124px（今天没有滑块）</p>
+    <div class="settings">
+      <span>音量</span>
+      <div class="slot"><div id="mount-settings"></div></div>
+      <span id="v-readout" class="mut">100%</span>
+    </div>
+  </div>
+
+  <div class="hud">
+    <div class="card">
+      <h2>方案 / 状态</h2>
+      <div class="seg" id="seg-variant">
+        <button data-v="0">0 · 现状（自绘）</button>
+        <button data-v="A">A · 纯伪元素</button>
+        <button data-v="B">B · accent-color</button>
+        <button data-v="C">C · DOM 轨 + 平台滑块</button>
+      </div>
+      <div class="row"><span class="k">主题</span>
+        <div class="seg" id="seg-theme">
+          <button data-theme="light">亮</button>
+          <button data-theme="dark">暗</button>
+        </div>
+        <div class="seg" id="seg-contrast">
+          <button data-contrast="normal">标准对比</button>
+          <button data-contrast="more">高对比</button>
+        </div>
+      </div>
+      <div class="row"><span class="k">两端对齐</span>
+        <div class="seg" id="seg-inset">
+          <button data-inset="native">按 UA 行程</button>
+          <button data-inset="full">全宽（今天的画法）</button>
+        </div>
+      </div>
+      <div class="row"><span class="k">键盘步进</span>
+        <div class="seg" id="seg-step">
+          <button data-step="1000">1s</button>
+          <button data-step="250">0.25s</button>
+          <button data-step="100">0.1s</button>
+          <button data-step="any">any</button>
+        </div>
+      </div>
+      <div class="row"><span class="k">填充来源</span>
+        <div class="seg" id="seg-fill">
+          <button data-fill="value">跟控件值（与滑块同步）</button>
+          <button data-fill="smooth">跟宿主插值（滑块落后 ≤1 步）</button>
+        </div>
+      </div>
+      <div class="row"><span class="k">动作</span>
+        <div class="seg">
+          <button id="btn-toggle">暂停</button>
+          <button id="btn-focus">焦点交给进度条</button>
+          <button id="btn-fakedrag">模拟「拖动中」</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>同一件事的读数（本页实测）</h2>
+      <dl class="kv">
+        <dt>命中区</dt><dd id="m-hit">—</dd>
+        <dt>UA 轨 / 滑块</dt><dd id="m-ua">—</dd>
+        <dt>两端偏差</dt><dd id="m-inset">—</dd>
+        <dt>可聚焦</dt><dd id="m-focus">—</dd>
+        <dt>方向键改值</dt><dd id="m-keys">—</dd>
+        <dt>滑块量化</dt><dd id="m-quant">—</dd>
+        <dt>静止时写入</dt><dd id="m-writes">—</dd>
+      </dl>
+      <p class="note">
+        <b>写入 = 本页对 DOM 的一次赋值</b>（<code>--p</code> / <code>value</code> / 气泡文本）。
+        播放中是真变化，暂停后必须 <b>0/s</b>（D-30）。B 在拖动时两者都不写。
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>事件 · 键盘路径没有一行 handler，全是 UA 触发的 input / change</h2>
+      <ul class="log" id="log"></ul>
+    </div>
+  </div>
+</div>
+
+<div class="switcher">
+  <button id="sw-prev" aria-label="上一个方案">‹</button>
+  <span class="label" id="sw-label">0 · 现状（自绘）</span>
+  <button id="sw-next" aria-label="下一个方案">›</button>
+  <span class="hint">?variant=0|A|B|C</span>
+</div>
+
+<script>
+(() => {
+  'use strict'
+
+  /* ───────────────────────────────── 假宿主 ────────────────────────────────── */
+  const now = () => Date.now()
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
+  const fmtTime = (ms) => {
+    const s = Math.max(0, Math.round(ms / 1000))
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+  }
+
+  const player = { durationMs: 214000, positionMs: 82000, sampledAt: now(), playing: true, volume: 100, muted: false }
+  const host = {
+    live() { return clamp(player.positionMs + (player.playing ? now() - player.sampledAt : 0), 0, player.durationMs) },
+    poll() { if (!player.playing) return; player.positionMs = host.live(); player.sampledAt = now() },
+    seek(ms) {
+      // 真实宿主：等 mpv 确认（约 200ms）；这里 120ms，并在落地时盖章（D-31 同款）
+      setTimeout(() => { player.positionMs = clamp(ms, 0, player.durationMs); player.sampledAt = now() }, 120)
+    },
+  }
+  setInterval(() => host.poll(), 1000)
+
+  const APP = {
+    variant: 'A', theme: 'light', contrast: 'normal', inset: 'native', step: 1000, fill: 'value',
+    forcedDrag: false,
+    log: [], lastPointerAt: -1e9, lastKeyProof: -1e9, lastInputSrc: null, focused: false,
+  }
+  // 原型把内部状态挂出来：便于在 DevTools / 自动探针里读真实数字（产品代码里不会有这一行）
+  window.__range = { APP, player }
+
+  /* ─────────────────────────────── 写入计数（D-30） ───────────────────────────── */
+  // 每条滑条自己记账：这样能回答"哪一条在写"，而不只是"总共写了多少次"。
+  function rateOf(marks) {
+    const t = performance.now()
+    while (marks.length && t - marks[0] > 1000) marks.shift()
+    return marks.length
+  }
+
+  /* ───────────────────────────────── 事件日志 ──────────────────────────────── */
+  const logEl = document.getElementById('log')
+  function log(kind, text, cls) {
+    APP.log.unshift({ kind, text, cls })
+    APP.log = APP.log.slice(0, 10)
+    logEl.innerHTML = APP.log.map((e) => `<li class="${e.cls}"><span class="t">${e.kind}</span> ${e.text}</li>`).join('')
+  }
+
+  function elt(tag, cls, text) {
+    const n = document.createElement(tag)
+    if (cls) n.className = cls
+    if (text !== undefined) n.textContent = text
+    return n
+  }
+
+  /* ───────────────────────────── 滑条：四种实现 ─────────────────────────────── */
+  function createBar({ kind, surface }) {
+    const isVolume = kind === 'volume'
+    const maxValue = isVolume ? 100 : player.durationMs
+    const bar = elt('div', 'bar')
+    bar.dataset.v = APP.variant
+    bar.dataset.surface = surface
+    bar.dataset.inset = APP.inset
+
+    const st = {
+      bar, input: null, bubble: null, kind, surface,
+      painted: -1, writtenValue: null, pending: null, dragging: false,
+      paintFromHost,
+      marks: [],
+      bump(n = 1) { const t = performance.now(); for (let i = 0; i < n; i++) st.marks.push(t) },
+      rate: () => rateOf(st.marks),
+    }
+
+    const stepOf = () => (isVolume ? 1 : APP.step)
+    const quantize = (value) => {
+      if (APP.variant === '0') return clamp(Math.round(value), 0, maxValue)  // 自绘没有 step
+      const step = stepOf()
+      if (step === 'any') return clamp(Math.round(value), 0, maxValue)
+      return clamp(Math.round(value / step) * step, 0, maxValue)
+    }
+    const valueText = (v) => (isVolume ? `${Math.round(v)}%` : fmtTime(v))
+
+    // 唯一的绘制出口：值变了才写（D-30）。
+    function paintFraction(fraction, label) {
+      const q = Math.round(clamp(fraction, 0, 1) * 1e5) / 1e5
+      if (q === st.painted) return
+      st.painted = q
+      if (APP.variant !== 'B') {           // B 由 UA 从 value 自己画，没有可写的东西
+        bar.style.setProperty('--p', String(q))
+        st.bump(1)
+        // 气泡只在拖动时可见（静止时 opacity:0），所以静止时连文本都不该写 —— 今天那段代码
+        // 是每帧都写，B32 只干掉了"值没变还写"，没干掉"看不见还写"。
+        if (st.bubble && (st.dragging || st.forced)) { st.bubble.textContent = label; st.bump(1) }
+      }
+    }
+
+    // 等待（墙钟）→ 插值（快照）；与 lib/shared/playhead.js 同形，只是砍掉了边界细节。
+    function targetMs() {
+      const duration = player.durationMs
+      if (duration <= 0) return 0
+      if (st.pending) {
+        if (player.sampledAt >= st.pending.atMs) st.pending = null
+        else if (now() < st.pending.atMs) st.pending = null
+        else return Math.min(duration, st.pending.ms)
+      }
+      const elapsed = player.playing ? now() - player.sampledAt : 0
+      return clamp(player.positionMs + elapsed, 0, duration)
+    }
+
+    function paintFromHost() {
+      if (st.dragging) return
+      if (isVolume) {
+        const v = player.muted ? 0 : player.volume
+        paintFraction(v / 100, valueText(v))
+        if (st.input && Number(st.input.value) !== v) { st.input.value = String(v); st.bump(1) }
+        return
+      }
+      const ms = targetMs()
+      const qv = quantize(ms)
+      if (st.input && st.writtenValue !== qv) {
+        st.input.value = String(qv)
+        st.writtenValue = qv
+        st.bump(1)
+        st.input.setAttribute('aria-valuetext', fmtTime(qv))
+      }
+      // 填充与滑块用同一个数：控件值（已被 step 消毒），不另外发明一个更平滑的分数
+      // 也可以反过来让填充跟宿主插值（smooth）：滑块最多落后一步，仍然藏在 12px 滑块底下。
+      const f = APP.fill === 'smooth'
+        ? clamp(ms / player.durationMs, 0, 1)
+        : (st.input ? Number(st.input.value) : qv) / player.durationMs
+      paintFraction(f, fmtTime(f * player.durationMs))
+    }
+
+    /* ── variant 0：自绘（照抄现状） ── */
+    if (APP.variant === '0') {
+      const track = elt('div', 'track')
+      track.appendChild(elt('div', 'fill'))
+      bar.appendChild(track)
+      bar.appendChild(elt('div', 'thumb'))
+      if (!isVolume) {
+        st.bubble = elt('div', 'bubble', '0:00')
+        bar.appendChild(st.bubble)
+      }
+      const fractionFrom = (event) => {
+        const rect = bar.getBoundingClientRect()
+        return rect.width === 0 ? 0 : clamp((event.clientX - rect.left) / rect.width, 0, 1)
+      }
+      const seekLocal = (fraction, commit) => {
+        st.pending = { ms: Math.round(fraction * player.durationMs), atMs: now() }
+        paintFraction(fraction, fmtTime(fraction * player.durationMs))
+        if (commit) host.seek(st.pending.ms)
+      }
+      bar.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0 && event.pointerType === 'mouse') return
+        event.stopPropagation(); event.preventDefault()
+        APP.lastPointerAt = performance.now()
+        st.dragging = true
+        bar.dataset.dragging = 'true'
+        try { bar.setPointerCapture(event.pointerId) } catch { /* noop */ }
+        const f = fractionFrom(event)
+        if (isVolume) { player.volume = Math.round(f * 100); paintFraction(f, `${Math.round(f * 100)}%`) }
+        else seekLocal(f, false)
+        log('pointerdown', `自绘轨 → ${isVolume ? Math.round(f * 100) + '%' : fmtTime(f * player.durationMs)}`, 'ptr')
+      })
+      bar.addEventListener('pointermove', (event) => {
+        if (!st.dragging) return
+        const f = fractionFrom(event)
+        if (isVolume) { player.volume = Math.round(f * 100); paintFraction(f, `${Math.round(f * 100)}%`) }
+        else seekLocal(f, false)
+      })
+      const end = (event, commit) => {
+        if (!st.dragging) return
+        st.dragging = false
+        delete bar.dataset.dragging
+        try { bar.releasePointerCapture(event.pointerId) } catch { /* noop */ }
+        const f = fractionFrom(event)
+        if (isVolume) {
+          player.volume = Math.round(f * 100)
+          paintFraction(f, `${Math.round(f * 100)}%`)
+        } else if (commit) {
+          st.pending = { ms: Math.round(f * player.durationMs), atMs: now() }
+          host.seek(st.pending.ms)
+          log('pointerup', `提交 seek ${fmtTime(st.pending.ms)}（现状也只在这时提交）`, 'ptr')
+        }
+      }
+      bar.addEventListener('pointerup', (event) => end(event, true))
+      bar.addEventListener('pointercancel', (event) => end(event, false))
+      return st
+    }
+
+    /* ── variant A / B / C：原生 range ── */
+    const input = elt('input', 'range')
+    input.type = 'range'
+    input.min = '0'
+    input.max = String(maxValue)
+    input.step = isVolume ? '1' : String(APP.step)
+    input.value = String(quantize(isVolume ? (player.muted ? 0 : player.volume) : player.positionMs))
+    input.setAttribute('aria-label', isVolume ? '音量' : '播放进度')
+    input.setAttribute('aria-valuetext', valueText(Number(input.value)))
+    st.input = input
+
+    if (APP.variant === 'C') {
+      const rail = elt('div', 'rail')
+      rail.appendChild(elt('div', 'track'))
+      const travel = elt('div', 'travel')
+      travel.appendChild(elt('div', 'fill'))
+      rail.appendChild(travel)
+      bar.appendChild(rail)
+    }
+    bar.appendChild(input)
+    if (!isVolume && APP.variant !== 'B') {
+      st.bubble = elt('div', 'bubble', valueText(Number(input.value)))
+      bar.appendChild(st.bubble)
+    }
+
+    const srcOf = () => (performance.now() - APP.lastPointerAt < 400 ? 'ptr' : 'kbd')
+
+    input.addEventListener('input', () => {
+      const src = srcOf()
+      APP.lastInputSrc = src
+      if (src === 'kbd') APP.lastKeyProof = performance.now()
+      const value = Number(input.value)
+      input.setAttribute('aria-valuetext', valueText(value))
+      // 拖动中：只画自己那一层（A 的渐变 / C 的填充 / 气泡），不写 value —— UA 已经是真值
+      paintFraction(value / maxValue, valueText(value))
+      if (isVolume) {
+        player.volume = value
+        if (player.muted && value > 0) player.muted = false
+        log('input', `${src} · 音量 ${value}%（音量历来每次 input 就提交）`, 'input')
+      } else {
+        log('input', `${src} · ${fmtTime(value)}（拖动中只画，不提交）`, 'input')
+      }
+    })
+
+    input.addEventListener('change', () => {
+      if (isVolume) return
+      const ms = Number(input.value)
+      st.pending = { ms, atMs: now() }
+      host.seek(ms)
+      log('change', `${srcOf()} · 提交 seek ${fmtTime(ms)}`, 'change')
+    })
+
+    input.addEventListener('pointerdown', (event) => {
+      APP.lastPointerAt = performance.now()
+      st.dragging = true
+      bar.dataset.dragging = 'true'
+      event.stopPropagation()
+    })
+    const endDrag = () => { st.dragging = false; delete bar.dataset.dragging }
+    input.addEventListener('pointerup', endDrag)
+    input.addEventListener('pointercancel', endDrag)
+    input.addEventListener('focus', () => { APP.focused = true })
+    input.addEventListener('blur', () => { APP.focused = false })
+    // 这里没有 keydown：方向键 / Home / End 全部由 UA 实现（D-28）。
+
+    return st
+  }
+
+  /* ──────────────────────────────── 挂载与刷新 ──────────────────────────────── */
+  const mounts = {
+    sheet: document.getElementById('mount-panel'),
+    mini: document.getElementById('mount-mini'),
+    panelvol: document.getElementById('mount-panelvol'),
+    settingsvol: document.getElementById('mount-settings'),
+  }
+  let bars = []
+  let raf = 0
+
+  function mountAll() {
+    cancelAnimationFrame(raf)
+    for (const node of Object.values(mounts)) node.innerHTML = ''
+    bars = [
+      createBar({ kind: 'progress', surface: 'sheet' }),
+      createBar({ kind: 'progress', surface: 'mini' }),
+      createBar({ kind: 'volume', surface: 'panelvol' }),
+      createBar({ kind: 'volume', surface: 'settingsvol' }),
+    ]
+    for (const b of bars) mounts[b.surface].appendChild(b.bar)
+    if (window.__range) window.__range.bars = bars
+
+    const loop = () => {
+      for (const b of bars) {
+        if (b.surface === 'sheet' && APP.forcedDrag) {
+          if (!b.forced) {
+            b.forced = true
+            b.bar.dataset.dragging = 'true'
+            b.bar.style.setProperty('--p', '0.62')
+            if (b.bubble) b.bubble.textContent = fmtTime(player.durationMs * 0.62)
+            if (b.input) b.input.value = String(Math.round(player.durationMs * 0.62))
+            b.painted = 0.62
+            b.bump(3)
+          }
+          continue
+        }
+        if (b.forced) {
+          b.forced = false
+          delete b.bar.dataset.dragging
+          b.painted = -1
+        }
+        b.paintFromHost()
+      }
+      raf = requestAnimationFrame(loop)
+    }
+    raf = requestAnimationFrame(loop)
+  }
+
+  /* ─────────────────────────────── 读数与 HUD ──────────────────────────────── */
+  const $ = (id) => document.getElementById(id)
+  const panelBar = () => bars.find((b) => b.surface === 'sheet')
+
+  function sliderFacts() {
+    const b = panelBar()
+    if (!b) return null
+    const input = b.input
+    const rect = b.bar.getBoundingClientRect()
+    // Chromium 不暴露 ::-webkit-slider-thumb 的计算样式（读回来是元素自身的盒子），
+    // 所以轨道/滑块尺寸只能读我们自己声明的 token；B 方案的尺寸是 UA 私有，读不到。
+    const cs = getComputedStyle(b.bar)
+    const thumbW = Math.round(parseFloat(cs.getPropertyValue('--thumb')) || 0)
+    const trackH = Math.round(parseFloat(cs.getPropertyValue('--track-h')) || 0)
+    return {
+      hitH: Math.round(rect.height),
+      hitW: Math.round(rect.width),
+      thumbW, trackH,
+      focusable: input ? (document.activeElement === input) : false,
+      hasInput: Boolean(input),
+    }
+  }
+
+  function updateReadouts() {
+    const f = sliderFacts()
+    if (!f) return
+    $('m-hit').textContent = `${f.hitH} × ${f.hitW}px` + (f.hasInput ? '' : '（div，靠指针）')
+    $('m-ua').textContent = !f.hasInput
+      ? '自绘（无 UA 参与）'
+      : (APP.variant === 'B' ? 'UA 私有（读不到，约 4px / 16px）' : `轨 ${f.trackH}px / 滑块 ${f.thumbW}px`)
+    $('m-inset').textContent = !f.hasInput
+      ? '滑块两端各出 6px（今天的画法）'
+      : (APP.inset === 'native' ? '0px：填充止于滑块圆心' : `±${Math.round(f.thumbW / 2)}px：填充到容器两端`)
+
+    $('m-focus').innerHTML = !f.hasInput
+      ? '<span class="no">✗ 不可聚焦（只有指针路径）</span>'
+      : (f.focusable ? '<span class="ok">✓ 焦点在进度条上（UA）</span>' : '<span class="mut">原生控件：Tab 可进</span>')
+
+    const keyFresh = performance.now() - APP.lastKeyProof < 4000
+    $('m-keys').innerHTML = !f.hasInput
+      ? '<span class="no">✗ 没有键盘路径（SC 2.1.1）</span>'
+      : (keyFresh ? '<span class="ok">✓ 刚由键盘改过值</span>' : '<span class="mut">按 ← / → 试试</span>')
+
+    const step = APP.step === 'any' ? 'any' : Number(APP.step)
+    const pxPerStep = step === 'any' ? 0.03 : (step / player.durationMs) * f.hitW
+    $('m-quant').textContent = step === 'any'
+      ? 'any：1ms 粒度（方向键行为未知，待实测）'
+      : `${step}ms ≈ ${pxPerStep.toFixed(2)}px/步（滑块每步跳这么多）`
+
+    const sheet = panelBar()
+    const writes = sheet ? sheet.rate() : 0
+    const total = bars.reduce((sum, b) => sum + b.rate(), 0)
+    $('m-writes').innerHTML = `${writes} 次/秒（四条合计 ${total}）` +
+      (writes === 0 ? ' <span class="ok">静止 = 0（D-30）</span>' : ' <span class="mut">运动中</span>')
+
+    const live = player.muted ? 0 : host.live()
+    $('t-now').textContent = fmtTime(live)
+    $('t-left').textContent = '-' + fmtTime(player.durationMs - live)
+    $('v-readout').textContent = `${Math.round(player.muted ? 0 : player.volume)}%`
+  }
+  setInterval(updateReadouts, 120)
+
+  /* ───────────────────────────────── 控件绑定 ─────────────────────────────── */
+  const VARIANTS = [
+    { key: '0', label: '0 · 现状（自绘）' },
+    { key: 'A', label: 'A · 纯伪元素' },
+    { key: 'B', label: 'B · accent-color' },
+    { key: 'C', label: 'C · DOM 轨 + 平台滑块' },
+  ]
+
+  function setVariant(key, { push = true } = {}) {
+    APP.variant = key
+    document.documentElement.dataset.variant = key
+    for (const btn of document.querySelectorAll('#seg-variant button')) {
+      btn.setAttribute('aria-pressed', btn.dataset.v === key ? 'true' : 'false')
+    }
+    $('sw-label').textContent = (VARIANTS.find((v) => v.key === key) || VARIANTS[0]).label
+    if (push) {
+      const url = new URL(location.href)
+      url.searchParams.set('variant', key)
+      try { history.replaceState(null, '', url) } catch { /* file:// 可能拒绝，忽略 */ }
+    }
+    mountAll()
+  }
+
+  for (const btn of document.querySelectorAll('#seg-variant button')) {
+    btn.addEventListener('click', () => setVariant(btn.dataset.v))
+  }
+  const cycle = (dir) => {
+    const i = VARIANTS.findIndex((v) => v.key === APP.variant)
+    setVariant(VARIANTS[(i + dir + VARIANTS.length) % VARIANTS.length].key)
+  }
+  $('sw-prev').addEventListener('click', () => cycle(-1))
+  $('sw-next').addEventListener('click', () => cycle(1))
+
+  // 原型自身的切换键：焦点在输入控件上时让路（这正是要验的 UA 行为）
+  document.addEventListener('keydown', (event) => {
+    const el = document.activeElement
+    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return
+    if (event.key === 'ArrowLeft') { cycle(-1); event.preventDefault() }
+    if (event.key === 'ArrowRight') { cycle(1); event.preventDefault() }
+  })
+
+  function segmented(id, attr) {
+    for (const btn of document.querySelectorAll(`#${id} button`)) {
+      btn.addEventListener('click', () => {
+        const value = btn.dataset[attr]
+        if (attr === 'inset') APP.inset = value
+        if (attr === 'step') APP.step = value === 'any' ? 'any' : Number(value)
+        if (attr === 'theme') APP.theme = value
+        if (attr === 'contrast') APP.contrast = value
+        if (attr === 'fill') APP.fill = value
+        if (attr !== 'fill') document.documentElement.dataset[attr] = value
+        for (const other of document.querySelectorAll(`#${id} button`)) {
+          other.setAttribute('aria-pressed', other.dataset[attr] === value ? 'true' : 'false')
+        }
+        mountAll()
+      })
+    }
+  }
+  segmented('seg-theme', 'theme')
+  segmented('seg-contrast', 'contrast')
+  segmented('seg-inset', 'inset')
+  segmented('seg-step', 'step')
+  segmented('seg-fill', 'fill')
+
+  $('btn-toggle').addEventListener('click', (event) => {
+    player.playing = !player.playing
+    if (player.playing) {
+      player.positionMs = clamp(player.positionMs, 0, player.durationMs)
+      player.sampledAt = now()
+    } else {
+      player.positionMs = host.live()
+      player.sampledAt = now()   // D-31：冻结位置的传输操作自己盖章
+    }
+    event.currentTarget.textContent = player.playing ? '暂停' : '继续'
+    $('glyph-play').innerHTML = player.playing
+      ? '<path d="M4 2h3v12H4zM9 2h3v12H9z"/>'
+      : '<path d="M4 2.5l9 5.5-9 5.5z"/>'
+  })
+
+  $('btn-focus').addEventListener('click', () => {
+    const b = panelBar()
+    if (b && b.input) {
+      b.input.focus()
+      log('focus', '焦点交给进度条（没有调用方写的 keydown）', 'ptr')
+    } else {
+      log('focus', '现状：div 不可聚焦 → 只能靠指针', 'ptr')
+    }
+  })
+
+  $('btn-fakedrag').addEventListener('click', (event) => {
+    APP.forcedDrag = !APP.forcedDrag
+    event.currentTarget.textContent = APP.forcedDrag ? '退出「拖动中」' : '模拟「拖动中」'
+    if (!APP.forcedDrag) for (const b of bars) { b.forced = false; delete b.bar.dataset.dragging; b.painted = -1 }
+  })
+
+  $('btn-mute').addEventListener('click', () => {
+    player.muted = !player.muted
+    log('pointerdown', `静音 → ${player.muted}`, 'ptr')
+    mountAll()
+  })
+
+  /* ──────────────────────────────── 启动 ──────────────────────────────────── */
+  // 状态都可以用 URL 带走：?variant=A&theme=dark&step=250&inset=full&fill=smooth
+  const params = new URLSearchParams(location.search)
+  const initial = params.get('variant')
+  const paramTheme = params.get('theme')
+  const paramStep = params.get('step')
+  const paramInset = params.get('inset')
+  const paramFill = params.get('fill')
+  if (paramTheme === 'light' || paramTheme === 'dark') APP.theme = paramTheme
+  if (paramStep && ['1000', '250', '100', 'any'].includes(paramStep)) APP.step = paramStep === 'any' ? 'any' : Number(paramStep)
+  if (paramInset === 'full' || paramInset === 'native') APP.inset = paramInset
+  if (paramFill === 'smooth' || paramFill === 'value') APP.fill = paramFill
+
+  const initialTheme = paramTheme === 'light' || paramTheme === 'dark'
+    ? paramTheme
+    : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+  document.documentElement.dataset.theme = initialTheme
+  document.documentElement.dataset.contrast = 'normal'
+  document.documentElement.dataset.inset = APP.inset
+  for (const btn of document.querySelectorAll('#seg-theme button')) {
+    btn.setAttribute('aria-pressed', btn.dataset.theme === initialTheme ? 'true' : 'false')
+  }
+  for (const btn of document.querySelectorAll('#seg-contrast button')) {
+    btn.setAttribute('aria-pressed', btn.dataset.contrast === 'normal' ? 'true' : 'false')
+  }
+  for (const btn of document.querySelectorAll('#seg-inset button')) {
+    btn.setAttribute('aria-pressed', btn.dataset.inset === APP.inset ? 'true' : 'false')
+  }
+  for (const btn of document.querySelectorAll('#seg-step button')) {
+    btn.setAttribute('aria-pressed', btn.dataset.step === String(APP.step) ? 'true' : 'false')
+  }
+  for (const btn of document.querySelectorAll('#seg-fill button')) {
+    btn.setAttribute('aria-pressed', btn.dataset.fill === APP.fill ? 'true' : 'false')
+  }
+  setVariant(['0', 'A', 'B', 'C'].includes(initial) ? initial : 'A', { push: false })
+
+  window.addEventListener('error', (event) => {
+    const box = document.createElement('div')
+    box.style.cssText = 'position:fixed;left:12px;top:12px;z-index:999;background:#d14343;color:#fff;' +
+      'padding:8px 10px;border-radius:8px;font:12px monospace;max-width:70vw'
+    box.textContent = 'prototype error: ' + event.message
+    document.body.appendChild(box)
+  })
+})()
+</script>
+</body>
+</html>
