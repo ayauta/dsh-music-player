@@ -25,7 +25,7 @@ window.__ModuleLoader__.load({
     // `node scripts/bundle-id.mjs --write`; `npm test` fails while it is stale.
     // Module scope on purpose: bundles are concatenated into one classic script,
     // where a top-level `const` would collide with another module's.
-    const BUNDLE_ID = 'dshm-dbe3cc92a8be' // dsh-music-bundle-id
+    const BUNDLE_ID = 'dshm-b250ad1e8c34' // dsh-music-bundle-id
 const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by motion-source test)
 
     const React = require('react')
@@ -544,9 +544,9 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
 .dshm-grow { flex: 1 1 auto; }
 .dshm-vol { display: flex; align-items: center; gap: 8px; width: 124px; flex: none; }
 /* Settings is the one bar without a thumb: the row already prints the number on the
-   right, so the thumb would only repeat it. `.dshm-vol` is the row's own class — it
-   was dead CSS until 2026-11-15, which is how the settings bar ended up wearing the
-   panel volume's always-on thumb instead. */
+   right, so the thumb would only repeat it. The row's own class, .dshm-vol, carried
+   these rules long before anything used it — dead CSS until 2026-11-15, which is how
+   the settings bar ended up wearing the panel volume's always-on thumb instead. */
 .dshm-vol .dshm-progress { --dshm-thumb: 0px; --dshm-fill: var(--dsw-alias-label-secondary); }
 .dshm-vol .dshm-progress[data-variant="volume"] .dshm-range::-webkit-slider-thumb { opacity: 0; }
 .dshm-chip { font-size: 10.5px; font-weight: 500; letter-spacing: .02em; padding: 1.5px 6px; border-radius: 5px;
