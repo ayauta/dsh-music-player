@@ -185,16 +185,22 @@ test('the first press on a cold engine starts playback instead of pausing (B30)'
 })
 
 test('pausing while a file is genuinely loaded pauses it, and stamps where it stopped (B33)', async (t) => {
-  const h = await createPlayerHarness(t)
+  // A track long enough that 41.6 s is a legal position: the default fixtures are
+  // 8 s, and `seek` clamps to the duration, which made this test measure nothing.
+  const h = await createPlayerHarness(t, {
+    tracks: [{ id: 'a', durationMs: 189_457 }, { id: 'b', durationMs: 3_000 }, { id: 'c', durationMs: 3_000 }],
+  })
   await h.player.playQueue(['a', 'b', 'c'], 0)
 
   // Reproduce the real cadence: the host last polled at 41.6 s, the engine has
-  // since reached 42.5 s, and the user presses pause in between. The client has
-  // already painted up to ~42.3 s by interpolating from that poll.
+  // since reached 42.5 s, and the user presses pause in between. The client
+  // anchored that snapshot when it arrived (t = 1000 ms) and has been painting
+  // from it for 700 ms, so the bar is already showing ~42.3 s.
   await h.player.seek(41_600)
   h.engine.setTimePos(42_500)
   const before = h.snap()
-  const painted = positionOf(anchorOf(before, 0), 700)
+  const painted = positionOf(anchorOf(before, 1_000), 1_700)
+  assert.ok(painted > before.positionMs, 'the anchor must actually advance, or the rip-back check is vacuous')
 
   await h.player.pause()
 
