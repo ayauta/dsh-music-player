@@ -22,16 +22,26 @@ const repo = fileURLToPath(new URL('..', import.meta.url))
 const playerPath = join(repo, 'lib', 'host', 'player.js')
 const source = readFileSync(playerPath, 'utf8')
 
-test('the sample stamp is written in exactly one place', () => {
-  const stamps = source.match(/state\.positionSampledAt = Date\.now\(\)/g) ?? []
-  assert.equal(stamps.length, 1,
-    `every position write must go through stampPosition(); found ${stamps.length} hand-written stamps`)
+test('every playhead write goes through stampPosition or clearPlayhead', () => {
+  // Counting `positionSampledAt = Date.now()` alone let the other half slip: a
+  // site could write `positionMs` on its own and leave the stamp describing a
+  // different moment. Walk the writes instead and require each to sit inside one
+  // of the two helpers.
+  const helpers = ['function stampPosition(', 'function clearPlayhead('].map((marker) => {
+    const start = source.indexOf(marker)
+    assert.ok(start > 0, `${marker} is missing`)
+    return source.slice(start, source.indexOf('\n  }', start))
+  })
 
-  const fn = source.slice(source.indexOf('function stampPosition('))
-  assert.ok(fn.length > 0, 'stampPosition() is missing')
-  const body = fn.slice(0, fn.indexOf('\n  }'))
-  assert.match(body, /state\.positionMs =/, 'stampPosition writes the position')
-  assert.match(body, /state\.positionSampledAt = Date\.now\(\)/, 'stampPosition writes the stamp beside it')
+  const strayWrites = []
+  const lines = source.split('\n')
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!/state\.positionMs\s*=/.test(lines[index])) continue
+    const inHelper = helpers.some((body) => body.includes(lines[index]))
+    if (!inHelper) strayWrites.push(`${index + 1}: ${lines[index].trim()}`)
+  }
+  assert.deepEqual(strayWrites, [],
+    'a playhead write outside the two helpers can drift from its sample stamp (B33/B35):\n  ' + strayWrites.join('\n  '))
 })
 
 test('the three movement writers all use it', () => {
@@ -56,8 +66,14 @@ test('the three movement writers all use it', () => {
 })
 
 test('clearing the playhead clears both halves', () => {
-  // `clear()` means "nowhere": a fresh position with no sample would be a lie.
+  // `clear()` means "nowhere": a fresh stamp over an empty position would tell
+  // every client that a real sample of position 0 exists.
   const clear = source.slice(source.indexOf('async clear() {'), source.indexOf('async clear() {') + 400)
-  assert.match(clear, /state\.positionMs = 0/, 'position resets to zero')
-  assert.match(clear, /state\.positionSampledAt = 0/, 'and the sample stamp is cleared with it')
+  assert.match(clear, /clearPlayhead\(\)/, 'clear() goes through clearPlayhead')
+  assert.ok(!/state\.positionSampledAt = Date\.now\(\)/.test(clear), 'and never stamps "nowhere"')
+
+  const helper = source.slice(source.indexOf('function clearPlayhead('))
+  const body = helper.slice(0, helper.indexOf('\n  }'))
+  assert.match(body, /state\.positionMs = 0/, 'position resets to zero')
+  assert.match(body, /state\.positionSampledAt = 0/, 'and the sample stamp is cleared with it')
 })

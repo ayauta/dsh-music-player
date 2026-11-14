@@ -170,7 +170,7 @@ test('the client binds no keys of its own (D-28)', () => {
   assert.deepEqual(
     source.match(/role: 'slider'/g) ?? [],
     [],
-    'a role="slider" that ignores arrow keys is a lie — the native range control is the way back',
+    'a role="slider" while the plugin binds no keys would promise a keyboard contract it does not keep (D-28) — the native range control is the way back (D-34)',
   )
   assert.deepEqual(
     source.match(/tabIndex/g) ?? [],
