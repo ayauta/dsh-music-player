@@ -36,6 +36,10 @@ plugin_manager install_bundle → target: @ayauta/dsh-music-player
 
 或在 **设置 → 插件 → 添加插件** 里填 `@ayauta/dsh-music-player`。
 
+> **目前还没发布到 npm**（作者还没有 npm 账号）。发布配置已经就位——`publishConfig` 指向
+> registry.npmjs.org，推 `v*` tag 会跑 `.github/workflows/release.yml`（`npm run check` → `npm publish`）——
+> 所以现在请用下面的源码目录方式安装。
+
 **从源码目录装**（不用等发版）：
 
 ```powershell
