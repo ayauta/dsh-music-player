@@ -28,6 +28,7 @@
 
 **Fixed**
 - B1 队列视图渲染空白（`73315dc`）、B10（`ff053fb`）、B15（`3ca1ea9`）、B17（`977a62d`）、B19（`8e9c6c7`）、B20 暂停回包滞后（`feef92a`）
+- **进度条与音量条换成原生 `<input type="range">`（D-36，关 B36）**：视觉用 `appearance: none` + `::-webkit-slider-runnable-track` / `-thumb` 重画（轨 4/3px、悬停 6/5px、滑块 12/10px、命中区 20/10px 均不变），指针拖动/触摸/强制色交给平台；两条滑条都带 `tabIndex={-1}`，**插件不向宿主 Tab 序列新增停靠点**，也不写任何键位判定（D-28）。假声明消失（`progressbar`/`meter` 由守卫禁止复现），SC 2.1.1 记为已知不满足（B37）。顺带：一次只允许一个 seek 在途（`planSeek`/`settleSeek`，连按方向键不再被前一次的盖章提前放行）、静止时不写气泡文本、拖动中不回写 `value`（待重启 L3）
 - 动效规范（DESIGN §6）、B22–B28：面板补退出动画、曲线与时长分工、去掉 height / box-shadow 过渡、删死代码、hover 门控（工作区，待重启 L3）；同批修掉实机暴露的 React #310（hooks 顺序）；退出 160ms、按按下/松开拆分、播放图标乐观翻转
 - 播放面板版式（DESIGN §7）：删除可见「正在播放」、传输行回归三键、模式移入 header、统一 16px 边距、封面圆角 10、音量按 HIG Sliders 还原为标准滑块；模式键去掉状态背景；进度滑块改为常显；传输三键统一 44×44 圆角矩形（层级只靠字形 18/20/18），悬停底色为 8% 圆角矩形（工作区，bundle `dshm-c517ae41e53e`）
 - 交互可靠性 CUI-01 / CUI-02：空格先看 `defaultPrevented`，再让位于获得焦点的控件（`button` / `input` / `[role=option]` / `[role=slider]` 等），音乐表面外只在没有焦点时接管；队列面板拆成 `pending / ready / failed` 读取状态，重读保留旧行、失败给只读重试（只重发 `queue.list`），清空/移除不会因读取失败被自动触发（bundle `dshm-2a24b8d96206`，待重启 L3）

@@ -3,7 +3,7 @@
 > 只回答"此刻在哪"：基线、能用的、阻塞、未验证、下一步。
 > 证据看 `docs/TESTING.md` §8；缺陷看 `LIMITATIONS.md`；历史看 `CHANGELOG.md` 与 git。
 
-最后更新：2026-11-15（L3 验收通过（bundle `dshm-847e9b43df0b`）；R15/D-32/D-33 全部关闭）
+最后更新：2026-11-15（D-36 落地 + 架构评审/回归改进：表格与死 CSS 守卫；**待 L3**）
 
 ---
 
@@ -16,6 +16,7 @@
 | 版本 | `1.7.0`。`b8dc624` 之后的全部工作未发版，见 `CHANGELOG.md` → `[Unreleased]` |
 | 最近验证基线 | **`dshm-847e9b43df0b`（Manual L3，2026-11-15，用户："验证完成了，正常"）**：R15 / D-35、D-32、D-33、B35 一并验收；上一基线为 `dshm-c517ae41e53e`（2026-11-12） |
 | 已证加载的 bundle | `dshm-847e9b43df0b`：2026-11-15 用户重启后 L3 通过（Manual）；宿主 artifact rev 与 served 一致见 TESTING §8 |
+| 当前源码 bundle（**未验证**） | `dshm-dbe3cc92a8be`：D-36 落地 + 设置音量条归位 + 4 段死 CSS 清理后的指纹；需重启 DSH 并在 served 字节上核对 |
 | 更早的真实宿主基线 | `59a1e9b`：真实库 v2、85 首 / 4 来源、WASAPI 试听通过 |
 | 标签 | 无 |
 | 数据库 | `user_version = 2`；真实库 85 首 / 0 missing / 4 来源（2026-11-11 只读核对） |
@@ -32,7 +33,8 @@
 - 验证网：L1 160（`npm run check` = 全量语法检查 + L1）、L2 51、Smoke 21、bundle-id 三方比对（方法见 TESTING §2）
 - 播放头算术单一份实现：`lib/shared/playhead.js` → 生成进 `client.js` 标记区，守卫逐字符比对（D-24）；
   补间锚在单调时钟上、按采样身份复用锚点、定位等待按采样时刻判新旧（D-27）
-- 键盘：插件**不绑任何键**（D-28）——全局接管、进度/音量方向键、行内 Enter/Space 全部移除
+- 键盘：插件**不绑任何键**（D-28）——全局接管、进度/音量方向键、行内 Enter/Space 全部移除；
+  两条滑条是原生 range 且**不在 Tab 序列**（`tabIndex={-1}`，D-36）：点过之后方向键仍有效，那是平台行为
 - **未实现**：`track.relocate`、`roots.relocate`、缺失项界面、解码失败上限
 
 ## 3. 当前阻塞 / 待裁定
@@ -46,6 +48,7 @@
 | 项 | 已有证据 | 缺什么 |
 |---|---|---|
 | B15 / B17 / B19 / B20 的界面表现 | L1 + L2（含真实 mpv） | 真实宿主上的逐项人工核对 |
+| **D-36 原生 range 的 L3 四条**（Tab 不进 / 点过之后能改 / 拖动 / 视觉同族） | L1 **165/165**；`test:repeat` 0/5 red；真实 CSS 用 headless Edge 单独渲染核对（亮/暗 × 五处 surface） | 真宿主重启后的人工四条；served 字节一致性 |
 | B3 / R08 四态按钮 | 代码 + L1 守卫 | 重启后的 L3 验收 |
 | 空队列状态（B1 修复后） | 无 | 清空真实队列会丢待播列表，未做 |
 | 面板在自适应窗口尺寸下的钳制 | 无 | 只做过一次失败尝试（最大化时 `SetWindowPos` 无效） |
@@ -60,8 +63,11 @@
 
 ## 5. 下一步
 
-1. **滑块换原生 `<input type="range">`（升为下一优先项）**：不再是"锦上添花"，而是 **B36 的到期条件**——现在的 `progressbar` / `meter` 声明与可拖行为相矛盾，且键盘无同等路径（SC 2.1.1）；原生控件把焦点/键盘/指针交回平台，插件仍不写键位判定（D-28 不变）。属交互模式变化，按 `AGENTS.md` §16 五步走，见 D-34
-2. **键盘 seek 的等待**：`←/→/Home/End` 的绑定已随 D-28 删除，原生 range 落地后若恢复键盘 seek，等待机制要一并接上（D-27 的 pending 目前只有指针路径会建）
+1. **D-36 的 L3 验收**（真宿主，四条见 `docs/handoffs/2026-11-15.md` §5）：Tab 不进 / 点过之后能改 /
+   拖动仍可用 / 视觉同族（亮暗各一次）。**落地已完，未验**：`npm run check` 165/165、
+   `test:repeat -- test/player-transport.test.mjs 5` 0/5 red
+2. **键盘 seek 的等待**：随 D-36 一并接上——`planSeek`/`settleSeek` 让一次只有一个 seek 在途，
+   `resolveSeek` 的闩锁在键盘路径上同样生效（连按不再被前一次的盖章提前放行）
 3. UI 审计 P1 批：CUI-11 静音标签 → CUI-04 零首空态 → CUI-07 文件与规格 → CUI-03 窄宽列隐藏
 4. R06 面板内 封面 ⇄ 队列：先出 2–3 个方案（新视图，不是排版）
 5. Phase 2a `track.relocate`：`{op:'track.relocate', id, path}`，事务内可整合已入库目标，冲突整体回退
@@ -102,4 +108,6 @@
 - 第二十一轮（复核后的第二批）：刷新状态的重复门控收进 `commitAnswer(requestId, apply)`——成功与失败两条路都只能从这一扇门进；守卫改为「两条都走 commitAnswer + session 写入只能是回调」，变异（失败路径绕过门）→ 红。`LIMITATIONS.md` 与 `TESTING.md` §2.4 的两套豁免话术合并为**一个登记处**（`LIMITATIONS` §一，状态列写到期条件），TESTING 只留指针。bundle 现为 `dshm-847e9b43df0b`（本轮宿主未改）
 - 第二十二轮（R15 落地，D-35）：`prev()` 的 3 秒判据改用 `currentPositionMs()`——宿主内插值，复用客户端的 `positionOf()`；`isPlayingNow()` 成为快照与规则共用的唯一定义。L1 两例先红后绿、变异（换回采样值）红、连跑 `0/3 red`；全量 **160/160**。客户端未改，bundle 仍 `dshm-847e9b43df0b`
 - 第二十三轮（L3 验收记录）：用户重启后确认「验证完成了，正常」，覆盖 R15 / D-35、D-32、D-33、B35；TESTING §8 加一条 Manual 记录，基线更新为 `dshm-847e9b43df0b`；§4 里七行待验合并为一行「已验收（后续改动需重验）」；§5 第一项（重启 L3）删除并重排：`prev()` 的 3 秒判据改用 `currentPositionMs()`——宿主内插值，复用客户端的 `positionOf()`；`isPlayingNow()` 成为快照与规则共用的唯一定义。L1 两例先红后绿、变异（换回采样值）红、连跑 `0/3 red`；全量 **160/160**。客户端未改，bundle 仍 `dshm-847e9b43df0b`；**需重启 DSH**
-- 工作区：本轮改动**未提交**，按「宿主 / 文档」分开提交（AGENTS.md §3）
+- 第二十四轮（D-36，原生 range 落地；`/grill-with-docs` 两轮裁定 + `/prototype` 先出方案）：用户否掉 D-34 里"键盘由 UA 提供"这半句，要求**插件没有任何键盘操作**。取证与原型把这句话拆成三件事（键位绑定 / Tab 停靠点 / 键盘路径），实测「不响应方向键」在表单控件上做不到，因此定为：换原生 range（`appearance:none` + `::-webkit-slider-*`，视觉参数不变）+ **`tabIndex={-1}` 摘掉 Tab 停靠点** + 仍不写任何键位判定。原型在 `prototype/2026-11-15-native-range/`（0 现状 / A 纯伪元素 / B accent-color / C 双层，实测写入 120→61/s、`step` 同时决定键盘步进与滑块量化）。顺带修掉两个原型撞出来的坑：一次只允许一个 seek 在途（`planSeek`/`settleSeek`，否则连按被前一次的盖章提前放行）、静止时不写气泡文本与拖动中不回写 `value`。守卫：`type: 'range'` 与 `tabIndex: -1` 成对且各两处、`role: 'progressbar'/'meter'` 禁止复现、无键 props（变异两处各自红）。`npm run check` **165/165**、`test:repeat -- test/player-transport.test.mjs 5` **0/5 red**；bundle → `dshm-d10c2f0d6f40`，**需重启 DSH**；L3 四条见 handoff §5（Tab 不进 / 点过之后能改 / 拖动 / 视觉同族）
+- 第二十五轮（`/improve-codebase-architecture` + `/retro`，架构评审报告见 `%TEMP%/architecture-review-2026-11-15.html`）：子代理带新上下文走了一遍最近改动面，报 3 个候选 + 2 个被 deletion test 否掉的。**真缺陷一个**：`.dshm-vol` 的三条规则匹配不到任何元素（设置行用的是裸 `<div>`），于是"设置里没有滑块"这句意图只存在于 CSS 注释里，控件实际穿着面板音量的常显滑块 —— 给设置行补上 class 修正，并顺手删掉 4 段死规则（`dshm-disclose` / `dshm-pop-more` / `dshm-sheet-body` / `dshm-chips`）。**守卫两处**：新增 `test/docs.test.mjs`（表格必须有表头、列数与表头一致、`D-nn`/`Bnn` 唯一递增）与 `client-source` 的 CSS locality 用例（样式表里每个 `.dshm-*` 必须在源码别处被渲染）——落地当天抓出 3 张坏表 + 4 段死 CSS；另把两条"断言拼写"的守卫改成断言接缝（`resolveSeek\(` 的实参写法、`type:'range'` 各出现两次）。运行时候选（两条滑条共用管线 / seek 队列的驱动器 / 三处 rAF）**故意不做**：它们压在待验的 L3 基线上，先重启验完 D-36 再按 2→3→4→5 顺序做。`npm run check` **171/171**、`test:repeat` 0/5 red；bundle → `dshm-dbe3cc92a8be`
+- 工作区：本轮改动（`client.js` / `test/` / `docs/` / `prototype/`）**未提交**；`prototype/` 是 throwaway，选型后挪到 `prototype/<name>` 分支（`AGENTS.md` §3 + emil 的 prototype 约定）

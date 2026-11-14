@@ -240,6 +240,19 @@ npm run test:repeat -- test/player-transport.test.mjs 20    # 打印 n/20 red
 **规则三**：夹具表达不了某类竞态时，在用例里写明"这条测不到什么"，不要留一个看起来覆盖了、
 实际上只覆盖同步路径的断言。
 
+### 2.6 静态守卫的写法（2026-11-15）
+
+`client.js` 没有渲染器可给 `node --test`（D-02），所以有一部分事实只能靠**读源码**的守卫。两条写法规则：
+
+- **规则一：断言接缝，不断言拼写。** 守卫钉"调用了哪个 module、把答案写回哪里、时钟从哪读"，
+  而不是实参的逐字写法。反例（2026-11-15 被合法重构打红）：`resolveSeek\(pendingRef\.current, player, Date\.now\(\)\)`
+  —— D-27 的全部意义就是把时钟当参数传；`if (next.write === false) return` —— `if (!next.write) return` 完全等价。
+  计数类断言同样改成不变量："`tabIndex` 数 === `type:'range'` 数"，而不是"各出现两次"。
+- **规则二：先找能自动查的那一半。** 拿不准写规则还是写守卫时，先问"有没有确定性的判据"。
+  结构性问题都能查：`test/docs.test.mjs`（表格必须有表头、列数与表头一致、`D-nn` / `Bnn` 唯一且递增）
+  与 `client-source` 的 CSS locality 用例（样式表里每个 `.dshm-*` 必须在源码别处被渲染）。
+  两者落地当天抓出 7 处真实缺陷（3 张表 + 4 段死 CSS）；同样的内容写成 AGENTS 规则一条也抓不到。
+
 ---
 ## 3. 默认拒绝的脚本（Phase 0B-1 起由代码强制）
 
@@ -505,7 +518,6 @@ npm run smoke -- --library <path> --allow-real-library   # 只读诊断，需显
 | 2026-11-14 | Automated | 工作区（B34 修后） | L1 | `node --test test/playhead.test.mjs` | **Passed**：36 tests / 0 fail | 脚本 | 定序门与补间/等待/绘制守卫共存 |
 | 2026-11-14 | Automated（**临时变异，均已还原**） | 工作区（B34） | L1 | 变异 A：`acceptResponse` 恒为 `true` → `33 pass / 3 fail`；变异 B：客户端门改成 `if (false)`（先 diff 确认落地）→ `client-source` 16 pass / 1 fail | **各自 Red** | Agent | 纯函数与"组件真的用了它"两面都钉住 |
 | 2026-11-14 | Automated | 工作区（B34；bundle `dshm-016c9bffbb5c`） | L1 | `npm run check` + `node scripts/inline-playhead.mjs`（verify） | **Passed**：152 tests / 0 fail；生成区一致；**source id** `dshm-cc5effbf6882` → **`dshm-016c9bffbb5c`** | 脚本 | 守卫：编号在发出时、判定在 `session.setStatus` 之前。**不覆盖**真实交错频率（需重启 L3 连点验证） |
-
 | 2026-11-14 | **Manual** | `dshm-016c9bffbb5c` + B33/B34 宿主改动 | L3 | 用户连点暂停 | **Failed**：仍会回缩（第三次） | 用户 | 说明前三次修的不是写入者 |
 | 2026-11-14 | Automated（**紧闭环，实现前**） | 工作区（B35） | L1 | `node --test test/player-transport.test.mjs`（夹具新增 `holdNextTimePos()`：挂起下一次 `time-pos` 读取，释放时返回读取**开始**那一刻的值；另新增可注入 `pollMs`） | **Failed**：`the late read must not move the playhead back to 41 600 under a paused track`——`actual: [42500, 41600]` | 脚本 | 复现"读在途跨过暂停"：盖章 42.5s 之后，在途读取把 41.6s 写回去 |
 | 2026-11-14 | Automated（**临时变异，已还原**） | 工作区（B35） | L1 | 先试 `issuedAt >= state.positionSampledAt` → 连跑 5 次里 2 次失败，日志出现 `issuedAt === stamp === …426`（同毫秒并列放行）；改为代数比较后再变异（去掉比较）→ 5/5 全红 | **混红→稳定红** | Agent | 毫秒精度不足以表达"先后"；代数比较才是判据 |
@@ -518,6 +530,9 @@ npm run smoke -- --library <path> --allow-real-library   # 只读诊断，需显
 | 2026-11-14 | Automated | 工作区（bundle `dshm-bb35f28e6e40`） | L1 | `npm run check` + `node scripts/test-repeat.mjs test/player-transport.test.mjs 5` | **Passed**：48 files parse / 158 tests / 0 fail；竞态用例 `0/5 red` | 脚本 | 覆盖 D-32 失败路径、D-33 收口、B33 断言重写、CHANGELOG 守卫；**不覆盖**真实渲染与重启后的行为 |
 | 2026-11-14 | Automated（实现前**预期红**） | 工作区（R15 / D-35） | L1 | `node --test --test-name-pattern='R15' test/player-transport.test.mjs` | **Failed**：`past three seconds: prev restarts…`，`actual: 'a'`（采样 2.5 s、真实 3.1 s 时错误地回了上一首） | 脚本 | 新用例把判据钉在"真实位置"上；另一例"暂停在 2.6 s → 回上一首"当时就是绿的（今天的采样在暂停时是准的） |
 | 2026-11-14 | Automated（**变异已验证**） | 工作区（R15 修后） | L1 | 同命令 + 变异（`prev()` 换回 `state.positionMs`）+ `test-repeat … 3` | **Passed** 2/2；变异 → 1/2；连跑三次 `0/3 red` | 脚本 | `currentPositionMs()` 复用 `positionOf()`，与客户端同一份算术；`isPlayingNow()` 成为快照与规则共用的唯一定义 |
+| 2026-11-15 | Automated | 工作区（D-36 落地，未提交；`dshm-d10c2f0d6f40`） | L1 | `npm run check`（全量语法 + 165 例） | **Passed**：165 tests / 0 fail / 1.7s；无 mpv、无宿主 | 脚本 | 覆盖 `test/*.test.mjs`；**不**证明浏览器里执行了这份字节，也**不**证明 UA 的键盘/指针行为（L3 判据见 handoff §5） |
+| 2026-11-15 | Automated | 同上 | L1 | `npm run test:repeat -- test/player-transport.test.mjs 5` | **Passed**：`0/5 red in 6.4s` | 脚本 | 只说明这 5 次运行没红；竞态用例的稳定性判据，不是"没有竞态"的证明 |
+| 2026-11-15 | Automated（非测试层） | 同上 | — | 把 `client.js` 的真实 CSS 抽出（`artifacts/d36-range/build-harness.mjs` → `harness.html`，不入库），配等价标记用 headless Edge 157 渲染亮/暗两套、五处 surface 截图（`artifacts/d36-range/real-css-light-dark.png`） | **Passed**：4/3px 轨、12/10px 滑块、悬停 6/5px、气泡锚在滑块圆心、10px 迷你行、无滑块设置行均按 DESIGN §7 呈现 | 脚本 | **不**经过 DSH 宿主，**不**覆盖 slot 挂载与 React 生命周期；只为人眼核对视觉参数 |
 | 2026-11-15 | **Manual** | `dshm-847e9b43df0b`（重启后的真实宿主 `0.2.2-rc.3 / 6b729fe`） | L3 | 用户重启后按 CURRENT §4 的判据逐条验：R15 四条（3.5s 重播 / 2s 内上一首 / 暂停 3.5s 重播 / 暂停 2s 上一首）+ D-32/D-33 四条（断连不闪旧状态 / 暂停不回缩 / 切歌从 0 起 / 其余不回归） | **Passed**：用户确认"验证完成了，正常" | 用户 | 覆盖 R15 / D-35、D-32、D-33、B35；**不覆盖**长时播放、B36 无障碍（仍未修）、其它界面项 |
 **关于 2026-10-29 那条 L3 记录（`scripts/playback-test.mjs`）的说明**：
 
