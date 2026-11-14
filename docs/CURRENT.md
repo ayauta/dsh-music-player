@@ -29,7 +29,7 @@
 - 曲库身份：同一路径沿用原 id；改名＝新曲目 + 旧行 `missing`；移除来源保留行与引用，重加恢复原 id
 - 扫描台账：每根 `done/partial/error` + `failed` 计数，异常不留 `running`
 - Host API：`queue.*` / `player.*` / `library.*` / `prefs.*`
-- 验证网：L1 158（`npm run check` = 全量语法检查 + L1）、L2 51、Smoke 21、bundle-id 三方比对（方法见 TESTING §2）
+- 验证网：L1 160（`npm run check` = 全量语法检查 + L1）、L2 51、Smoke 21、bundle-id 三方比对（方法见 TESTING §2）
 - 播放头算术单一份实现：`lib/shared/playhead.js` → 生成进 `client.js` 标记区，守卫逐字符比对（D-24）；
   补间锚在单调时钟上、按采样身份复用锚点、定位等待按采样时刻判新旧（D-27）
 - 键盘：插件**不绑任何键**（D-28）——全局接管、进度/音量方向键、行内 Enter/Space 全部移除
@@ -61,6 +61,7 @@
 | **B35 暂停后回缩（真凶）**（宿主改动，客户端 bundle 仍是 `dshm-016c9bffbb5c`） | L1 153/153；紧闭环用「挂起的 time-pos 读取」复现；变异 5/5 红、修复连跑 10 次绿 | **重启 DSH 后 L3**：① 播放中狂点暂停/播放 20 次，条不回缩；② 暂停后静置 10s 不动；③ 拖动 seek 后不回弹；④ 自动切歌时进度干净从 0 起 |
 | ~~`prev` 3 秒规则~~ | 已裁定（2026-11-14）：**维持现状**，并升为规范 `docs/DESIGN.md` **R15**（"播放与暂停同一套规则"） | 取证见 `docs/research/2026-11-14-prev-button-convention.md`；暂停时的行为无一手来源，已在 R15 备注中标明 |
 | **D-32 / D-33 这批**（bundle `dshm-847e9b43df0b`，宿主 + 客户端都改） | L1 158/158（D-32 失败路径守卫、D-33 写入收口三条守卫、B33 断言重写）+ 变异各自 Red + 竞态用例 0/5 red | **重启 DSH 后 L3**：① 断连时不再出现"读了 1 秒又回到旧状态"的闪烁；② 暂停后条不回缩（B35 已确认，回归确认即可）；③ 切歌/播完一首后进度从 0 干净起；④ 其它判据不回归 |
+| **R15 / D-35**（宿主改动；bundle 仍 `dshm-847e9b43df0b`） | L1 160/160（R15 两例 + 变异 + `test-repeat 0/3`） | **重启 DSH 后 L3**：① 播到 3.5 秒左右按上一首 → **重播本曲**；② 2 秒内按 → 回上一首；③ 暂停在 3.5 秒时按上一首 → **重播**（同一套规则）；④ 暂停在 2 秒时按 → 回上一首 |
 | ~~播放面板版式~~ | L1 106/106 + 版式守卫 + **Manual L3（2026-11-12）** | 已验收：用户确认功能符合预期 |
 
 ## 5. 下一步
@@ -106,4 +107,5 @@
 - 第十九轮（`/retro` 收尾 + 裁定）：把「上一首」3 秒规则升为 `DESIGN.md` **R15**（Approved，播放与暂停同一套规则，取证来源与"暂停行为无一手来源"一并写明，消除 Spec Drift）；`AGENTS.md` §15 技能表移到 [docs/agents/skills.md](docs/agents/skills.md)（AGENTS **333 → 281 行**，只留指针）；本轮起把 18 轮积压按 `shared / host / client / chore / docs` 五类落提交
 - 第二十轮（`/code-review` 两轴之后的修正，第一批）：清掉 CHANGELOG 里被 PowerShell 全局替换写进 7 个历史版本的工具条目；修掉 TESTING / LIMITATIONS / CURRENT 三处「描述已删实现」的 CUI-01 文本；D-23 补标 Superseded（被 D-28 取代）、GLOSSARY 的「行内激活」同步退役；修掉 B33 用例里恒真的断言（`anchorOf(before, 0)` 让 `positionOf` 永不推进，且默认夹具 8 秒曲目使 `seek(41 600)` 被夹到 8 000——这条用例此前什么都没测到）；新增 `test/changelog.test.mjs` 两条守卫（跨版本不得重复 bullet、工具条目只能出现在 [Unreleased]）。npm run check 158/158
 - 第二十一轮（复核后的第二批）：刷新状态的重复门控收进 `commitAnswer(requestId, apply)`——成功与失败两条路都只能从这一扇门进；守卫改为「两条都走 commitAnswer + session 写入只能是回调」，变异（失败路径绕过门）→ 红。`LIMITATIONS.md` 与 `TESTING.md` §2.4 的两套豁免话术合并为**一个登记处**（`LIMITATIONS` §一，状态列写到期条件），TESTING 只留指针。bundle 现为 `dshm-847e9b43df0b`（本轮宿主未改）
-- 工作区：本轮改动**未提交**，按「客户端 / 文档」分开提交（`AGENTS.md` §3）
+- 第二十二轮（R15 落地，D-35）：`prev()` 的 3 秒判据改用 `currentPositionMs()`——宿主内插值，复用客户端的 `positionOf()`；`isPlayingNow()` 成为快照与规则共用的唯一定义。L1 两例先红后绿、变异（换回采样值）红、连跑 `0/3 red`；全量 **160/160**。客户端未改，bundle 仍 `dshm-847e9b43df0b`；**需重启 DSH**
+- 工作区：本轮改动**未提交**，按「宿主 / 文档」分开提交（AGENTS.md §3）

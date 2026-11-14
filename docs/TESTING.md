@@ -516,6 +516,8 @@ npm run smoke -- --library <path> --allow-real-library   # 只读诊断，需显
 | 2026-11-14 | Automated（实现前**预期红**） | 工作区（D-32 失败路径） | L1 | `node --test --test-name-pattern='B34' test/client-source.test.mjs` | **Failed**：catch 分支缺 `acceptResponse` → 补三条断言后红 | 脚本 | 修后：`refreshStatus` 的失败分支同样先门控、再推进编号、后写 session |
 | 2026-11-14 | Automated（**变异已验证**） | 工作区（D-33 写入收口） | L1 | `node --test test/player-source.test.mjs`；变异：把恢复态那处改回裸写 | **Passed** 3/3；变异 → `a playhead write outside the two helpers can drift from its sample stamp (B33/B35)` | 脚本 | 守卫从"数 `Date.now()`"改为"逐行检查 `state.positionMs =` 是否落在 `stampPosition` / `clearPlayhead` 内"——数总和的写法曾放过 9 处裸写 |
 | 2026-11-14 | Automated | 工作区（bundle `dshm-bb35f28e6e40`） | L1 | `npm run check` + `node scripts/test-repeat.mjs test/player-transport.test.mjs 5` | **Passed**：48 files parse / 158 tests / 0 fail；竞态用例 `0/5 red` | 脚本 | 覆盖 D-32 失败路径、D-33 收口、B33 断言重写、CHANGELOG 守卫；**不覆盖**真实渲染与重启后的行为 |
+| 2026-11-14 | Automated（实现前**预期红**） | 工作区（R15 / D-35） | L1 | `node --test --test-name-pattern='R15' test/player-transport.test.mjs` | **Failed**：`past three seconds: prev restarts…`，`actual: 'a'`（采样 2.5 s、真实 3.1 s 时错误地回了上一首） | 脚本 | 新用例把判据钉在"真实位置"上；另一例"暂停在 2.6 s → 回上一首"当时就是绿的（今天的采样在暂停时是准的） |
+| 2026-11-14 | Automated（**变异已验证**） | 工作区（R15 修后） | L1 | 同命令 + 变异（`prev()` 换回 `state.positionMs`）+ `test-repeat … 3` | **Passed** 2/2；变异 → 1/2；连跑三次 `0/3 red` | 脚本 | `currentPositionMs()` 复用 `positionOf()`，与客户端同一份算术；`isPlayingNow()` 成为快照与规则共用的唯一定义 |
 **关于 2026-10-29 那条 L3 记录（`scripts/playback-test.mjs`）的说明**：
 
 - 该脚本直接打运行中的插件，**副作用**：覆盖真实队列、`prefs.set` 改真实设置、改变当前播放、结束后不恢复（见 §4）。

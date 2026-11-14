@@ -566,3 +566,22 @@
   `.dshm-progress-*` 的观感要重新落一遍，滑块与轨道的绘制从自绘变成伪元素）；排在 `docs/CURRENT.md` §5。
 - **验证**：换完后 L1 里 `client.js` 不得再出现 `role: 'progressbar'` / `role: 'meter'`；人工核对
   键盘 Tab 能进、方向键能改、拖动仍可用、视觉与现在同族（`TESTING.md` §2.4 + L3）。
+
+
+---
+
+## D-35 R15 的「3 秒」用宿主内插值判，不用 1 Hz 采样值
+
+- **状态**：Active（2026-11-14）
+- **背景**：R15 的规则是"播放位置 > 3 秒"，而 `state.positionMs` 由 1 Hz 轮询写入，播放中最旧可差约 1 秒。
+  `/code-review` 指出：真实的 3.0–4.0 s 区间可能读到 ≤3000 而**直接上一曲**，规则在边界上不确定。
+- **选项**：① 保持采样值；② 累计"本曲已播时长"（单调时钟 + 暂停累计）；③ 宿主内插值。
+- **结论**：③。`currentPositionMs()` 用 `positionOf()`（**与客户端同一份算术**，`lib/shared/playhead.js`）：
+  `positionMs + (playing ? now − positionSampledAt : 0)`，并按 duration 夹取。两个时间戳都是**本进程**的
+  `Date.now()`，没有客户端那种跨进程偏差；暂停时校正为零，直接返回 B33 盖章后的准确位置。
+- **被否方案**：① 边界不确定，正是本条要修的；② 要维护暂停累计，等于再长一个状态，而插值已经是现成的。
+- **影响面**：`lib/host/player.js` 新增 `isPlayingNow()`（快照与规则共用一份"是否在播"）与 `currentPositionMs()`；
+  `prev()` 改用它；不碰游标、队列、持久化、契约、快照字段。
+- **回退**：`prev()` 一行换回 `state.positionMs`。
+- **验证**：`test/player-transport.test.mjs` 两例——① 采样 2.5 s、真实已到 3.1 s（等 600ms）→ 必须**重播**；
+  ② 暂停在 2.6 s → 必须**回上一首**（校正为零）。变异（换回采样值）→ ① 红。

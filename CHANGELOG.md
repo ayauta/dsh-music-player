@@ -36,6 +36,7 @@
 - **B30 重启后第一次点播放没反应**：`player.toggle()` 只读 mpv 的 `pause`，而新进程默认 `no` 且没有文件打开，第一按被解析成"暂停空气"；改为"没有文件打开就一律 `resume()`"（D-29）。L1 用恢复态紧闭环复现并守住"已加载时的暂停不受影响"
 - **B31 大播放器进度条一卡一卡**：补间锚点按读到的对象身份缓存，`status` 每次读回都是新对象（1 Hz 轮询 + 每条命令后补读），同一张采样被重复读到就重置锚点 → 显示位置回退再爬；改为 `nextAnchor` 按**采样身份**复用锚点（D-27 补记）
 - **D-28 撤掉插件全部键盘绑定**：删除 D-23 遗留的 `attachKeyboard` / `KEY_OWNERS` / `controlOwnsKey` / `inMusicSurface` 与 `ctx.effect` 注册，以及进度条 `←/→/Home/End`、音量条 `←/→`、队列行 `Enter/Space`、库行 `Enter` 与 `ContextMenu / Shift+F10`、搜索框 `Esc`；`role="slider"` 降级为 `progressbar` / `meter`、行元素去掉 `tabIndex`。保留浏览器原生控件行为与"Esc 关闭已打开表面"（bundle `dshm-fe6cba61dd8e`，待重启 L3）
+- **R15 的 3 秒判据改用宿主内插值**：`prev()` 原先读 1 Hz 采样值，最多差一秒，真实的 3.0–4.0 s 会被读成 ≤3000 而直接上一首；新增 `currentPositionMs()`（复用 `lib/shared/playhead.js` 的 `positionOf()`，与客户端同一份算术）与 `isPlayingNow()`，暂停时校正为零（D-35）
 - **状态响应门控收成一条路**：`refreshStatus` 的 try/catch 各复制一份门控，改为 `commitAnswer(requestId, apply)`——成功与失败都只能经它；守卫改为断言「两条都走它 + session 写入只能是回调」，变异（失败路径绕过门）可红
 - **D-32 覆盖失败路径**：更旧请求的失败原先照样写 `phase: 'error'`，能盖掉已落地的新答案；失败分支现在同样过门控并推进编号（`client-source` 的 B34 用例补三条断言）。**D-33 写入收口**：位置与采样时刻改由 `stampPosition()` 成对写，全仓只剩一处 `Date.now()` 盖章，轮询 / 暂停 / `seek()` 三份同形代码消失；新增 `test/player-source.test.mjs` 三条守卫
 - **B32 暂停后进度条仍抖动**：`paint()` 每帧无条件写 `--p` 与气泡文本（120 次/秒），`--p` 驱动的 `left: calc()` / `scaleX()` 每次失效都重新取整，静止时表现为约 1px 微动；改为 `nextPaint` 变化判定（分数按 1e-5 量化），并删掉 hover 时对气泡的第二次写入（D-30；bundle `dshm-cc5effbf6882`，待重启 L3）
