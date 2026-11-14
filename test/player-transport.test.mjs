@@ -255,6 +255,38 @@ test('a poll that was already reading must not overwrite the pause stamp (B35)',
   assert.deepEqual([...seen], [42_500],
     'the late read must not move the playhead back to 41 600 under a paused track')
 })
+test('prev centres the three-second rule on the real position, not the last sample (R15)', async (t) => {
+  // The poll writes `positionMs` once a second, so a rule read straight off that
+  // value turns 3.0–4.0 s into a coin flip. Here the sample says 2.6 s and mpv
+  // has already reached ~3.1 s, which must count as "past three seconds".
+  const h = await createPlayerHarness(t, {
+    tracks: [{ id: 'a', durationMs: 189_457 }, { id: 'b', durationMs: 189_457 }, { id: 'c', durationMs: 189_457 }],
+  })
+  await h.player.playQueue(['a', 'b', 'c'], 1)
+  await h.player.seek(2_500)
+  h.engine.setTimePos(3_100)
+  await new Promise((done) => setTimeout(done, 600))
+
+  await h.player.prev()
+
+  assert.equal(h.snap().trackId, 'b', 'past three seconds: prev restarts the current track instead of stepping back')
+  assert.deepEqual(h.engine.of('seek').map((call) => call.args[0]), [2_500, 0],
+    'the second seek is the restart, which is what the rule asked for')
+})
+
+test('paused, the three-second rule reads the sample itself (R15)', async (t) => {
+  // Nothing is advancing while paused, so the elapsed-time correction must not
+  // inflate the position: 2.6 s stays 2.6 s and prev steps back.
+  const h = await createPlayerHarness(t)
+  await h.player.playQueue(['a', 'b', 'c'], 1)
+  await h.player.seek(2_600)
+  await h.player.pause()
+
+  await h.player.prev()
+
+  assert.equal(h.snap().trackId, 'a', 'under three seconds: prev goes to the previous track')
+})
+
 test('toggling while a file is genuinely loaded still pauses (B30 must not break it)', async (t) => {
   const h = await createPlayerHarness(t)
   await h.player.playQueue(['a', 'b', 'c'], 0)
