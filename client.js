@@ -23,7 +23,7 @@ window.__ModuleLoader__.load({
     // `node scripts/bundle-id.mjs --write`; `npm test` fails while it is stale.
     // Module scope on purpose: bundles are concatenated into one classic script,
     // where a top-level `const` would collide with another module's.
-    const BUNDLE_ID = 'dshm-016c9bffbb5c' // dsh-music-bundle-id
+    const BUNDLE_ID = 'dshm-bb35f28e6e40' // dsh-music-bundle-id
 const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by motion-source test)
 
     const React = require('react')
@@ -758,6 +758,12 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
         session.setStatus(status)
         return status
       } catch (error) {
+        // The gate covers the failure path too (D-32): a slow failure belongs to
+        // an older request and must not paint "error" over an answer that already
+        // landed. An applied failure still advances the number, so an older
+        // success cannot revive afterwards — the next poll is 1 Hz away anyway.
+        if (!acceptResponse(lastAppliedStatusId, requestId)) return null
+        lastAppliedStatusId = requestId
         session.set({ phase: 'error', error: String(error?.message ?? error) })
         return null
       }

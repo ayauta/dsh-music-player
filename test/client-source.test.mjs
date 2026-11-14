@@ -254,6 +254,17 @@ test('a late status answer cannot overwrite a newer one (B34)', () => {
   assert.match(fn, /lastAppliedStatusId = requestId/, 'the applied number is remembered')
   assert.ok(fn.indexOf('acceptResponse') < fn.indexOf('session.setStatus'),
     'the verdict comes before the session is touched')
+
+  // The failure path is part of the same channel: a stale *failure* must not
+  // paint "error" over an answer that already landed, and an applied failure
+  // still advances the number so an older success cannot revive it.
+  const catchBlock = fn.slice(fn.indexOf('} catch (error) {'))
+  assert.ok(catchBlock.includes('acceptResponse'),
+    'the gate covers the failure path too — otherwise a stale failure overwrites a newer answer (D-32)')
+  assert.ok(catchBlock.indexOf('acceptResponse') < catchBlock.indexOf('session.set'),
+    'the verdict comes before the session is touched on the failure path')
+  assert.match(catchBlock, /lastAppliedStatusId = requestId/,
+    'an applied failure advances the number, so an older success cannot revive it')
 })
 
 test('no component calls a hook after an early return (React #310)', () => {
