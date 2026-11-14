@@ -542,6 +542,7 @@ npm run smoke -- --library <path> --allow-real-library   # 只读诊断，需显
 | 2026-11-15 | Automated（非测试层） | 同上 | — | 把 `client.js` 的真实 CSS 抽出（`artifacts/d36-range/build-harness.mjs` → `harness.html`，不入库），配等价标记用 headless Edge 157 渲染亮/暗两套、五处 surface 截图（`artifacts/d36-range/real-css-light-dark.png`） | **Passed**：4/3px 轨、12/10px 滑块、悬停 6/5px、气泡锚在滑块圆心、10px 迷你行、无滑块设置行均按 DESIGN §7 呈现 | 脚本 | **不**经过 DSH 宿主，**不**覆盖 slot 挂载与 React 生命周期；只为人眼核对视觉参数 |
 | 2026-11-15 | Automated | 提交 `ebbd119` / `7f9da02` / `72b38a5` | L1 | `npm run check`（含新增 `test/docs.test.mjs` 5 例与 CSS locality 用例） | **Passed**：171 tests / 0 fail；两条新守卫落地当天抓出 3 张坏表 + 4 段死 CSS | 脚本 | 文档守卫只查形状不查正文；CSS locality 只查"有没有人渲染这个类"，不查它渲染得对不对 |
 | 2026-11-15 | Automated | 提交 `475b64c` / `18ae142`（bundle `dshm-b250ad1e8c34`） | L1 | `npm run check`（新增 `test/client-load.test.mjs` 4 例） | **Passed**：175 tests / 0 fail；变异（把反引号放回 CSS 注释）→ 围栏用例与加载用例同时红，复现"插件整个不加载" | 脚本 | 浅渲染不跑 effect、ref 为空；**不**证明真 DOM / React 生命周期 / 真实宿主 UI（那是 L3） |
+| 2026-11-15 | Automated（紧闭环 + 真浏览器） | 提交 `2abf1e6`（bundle `dshm-d4ad60246487`） | L1 + 手搭 | 真 Chromium + 真 React + 有状态假宿主（seek 延迟 120ms、落地盖章），点一次滑条并每 40ms 采样两条条的 `--p`；连点三下验证队列 drain | **Passed**：修前另一条 t≈120ms 才跟上，修后 t=0 两条同时到位；连续三下只发 2 次 seek、终值 0.903；`npm run check` 176/176 | Agent | 闭环是 throwaway（`.tmp-repro/`，不入库）；它验的是"两条条的一致性"，不代表真实宿主的延迟数值 |
 **关于 2026-10-29 那条 L3 记录（`scripts/playback-test.mjs`）的说明**：
 
 - 该脚本直接打运行中的插件，**副作用**：覆盖真实队列、`prefs.set` 改真实设置、改变当前播放、结束后不恢复（见 §4）。

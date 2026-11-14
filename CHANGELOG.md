@@ -27,6 +27,7 @@
 - 曲库身份按路径沿用：改名＝新曲目 + 旧行 `missing`；移除来源保留行与引用，重新添加恢复原 id（`cdd60aa`）
 
 **Fixed**
+- **两条滑条的 seek 闩锁与队列改为共用（D-36 补记三）**：此前从小播放器定位后，大播放器的条要等宿主回包才跟上（真 Chromium 实测 120ms，反向同样）；现在一份 `seekGate`（`pending` + `queue`）供两条共用，`latchSeek` 是唯一读闩锁的地方。顺带修掉"连点几下会把 seek 队列卡死"的二次规划（drain 必须直接发 `settled.send`），以及滑条在"宿主取消 pointerdown"时彻底拖不动的问题（指针路径改回自管）。`npm run check` 176/176
 - B1 队列视图渲染空白（`73315dc`）、B10（`ff053fb`）、B15（`3ca1ea9`）、B17（`977a62d`）、B19（`8e9c6c7`）、B20 暂停回包滞后（`feef92a`）
 - **进度条与音量条换成原生 `<input type="range">`（D-36，关 B36）**：视觉用 `appearance: none` + `::-webkit-slider-runnable-track` / `-thumb` 重画（轨 4/3px、悬停 6/5px、滑块 12/10px、命中区 20/10px 均不变），指针拖动/触摸/强制色交给平台；两条滑条都带 `tabIndex={-1}`，**插件不向宿主 Tab 序列新增停靠点**，也不写任何键位判定（D-28）。假声明消失（`progressbar`/`meter` 由守卫禁止复现），SC 2.1.1 记为已知不满足（B37）。顺带：一次只允许一个 seek 在途（`planSeek`/`settleSeek`，连按方向键不再被前一次的盖章提前放行）、静止时不写气泡文本、拖动中不回写 `value`（待重启 L3）
 - 动效规范（DESIGN §6）、B22–B28：面板补退出动画、曲线与时长分工、去掉 height / box-shadow 过渡、删死代码、hover 门控（工作区，待重启 L3）；同批修掉实机暴露的 React #310（hooks 顺序）；退出 160ms、按按下/松开拆分、播放图标乐观翻转

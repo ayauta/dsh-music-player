@@ -657,3 +657,9 @@
   **语义仍归平台**（隐式 `role=slider`、`aria-valuetext`、方向键只在被聚焦时由 UA 响应），**Tab 停靠点仍然没有**。
   坐标与填充/气泡共用同一条公式（`--dshm-thumb` 的行程内缩），三者不会互相打架；
   守卫钉住"每条滑条必须有 `setPointerCapture`"，防止有人再把拖动交回默认动作。
+- **补记（2026-11-15，第三条：闩锁与队列是播放器的，不是控件的）**：两条滑条各自持有 `pending`/队列时，
+  在小播放器发起的 seek 不会让大播放器提前画目标位置——被点的那条 t=0 就到位，另一条要等宿主回包
+  （真 Chromium 实测：`t=0 sheet 0.393 → t≈120ms sheet 0.700`，延迟正好等于宿主延迟）。现在一份 `seekGate`
+  （`pending` + `queue`）供两条共用，`latchSeek` 是唯一读闩锁的地方。附带修掉 drain 的二次规划：
+  `sendSeek(settled.send)` 必须直接发，若再走 `planSeek` 会被自己的 `inFlight` 挡回队列，连点几下会把队列卡死。
+  守卫：`resolveSeek(` 在模块副本之外只允许一处；`pendingRef`/`seekRef` 不得复现；drain 不得二次规划。
