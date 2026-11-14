@@ -279,3 +279,6 @@ AGENTS.md
 缺一步不算完成；方案没摆出来之前不动代码。
 每条结论都要挂来源，给不出就标 `假设（无来源）`，只能当待验证提案。
 红线、HIG 取用写法（`…/<page>.md`）、平台章节要求与反例：见 [`docs/agents/design-process.md`](docs/agents/design-process.md)。
+
+原型放 `prototype/<日期>-<名字>/`（单文件、双击可跑、状态走 URL 参数）；**选完方案就挪到 `prototype/<名字>` 分支**，
+master 只留验证过的决定。验证入口与判据口径见 `docs/TESTING.md` §2.6。
