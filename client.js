@@ -25,7 +25,7 @@ window.__ModuleLoader__.load({
     // `node scripts/bundle-id.mjs --write`; `npm test` fails while it is stale.
     // Module scope on purpose: bundles are concatenated into one classic script,
     // where a top-level `const` would collide with another module's.
-    const BUNDLE_ID = 'dshm-b47547df6ed0' // dsh-music-bundle-id
+    const BUNDLE_ID = 'dshm-d4ad60246487' // dsh-music-bundle-id
 const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by motion-source test)
 
     const React = require('react')
@@ -1190,6 +1190,55 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
     }
 
     /**
+     * One seek latch for the whole client, and one request queue behind it.
+     *
+     * The request belongs to the **player**, not to the bar that made it: both bars
+     * show the same playhead, so a seek started in the mini row has to lift the
+     * panel's latch too. With one `pending` per component, a seek took a full host
+     * round-trip to show up in the *other* bar — measured 2026-11-15: the bar that
+     * was clicked jumped to the target at t=0, the other one only moved when the
+     * post-seek snapshot landed (`t≈120ms`, i.e. the host's latency).
+     *
+     * The queue is shared for the same reason: one in flight at a time is a fact
+     * about the player, not about a widget, and two bars each keeping their own
+     * queue could have two seeks racing.
+     */
+    const seekGate = { pending: null, queue: idleSeek() }
+
+    /** Paint position for this frame: the latched target while a request is in flight. */
+    function latchSeek(player, wallNowMs) {
+      const latched = resolveSeek(seekGate.pending, player, wallNowMs)
+      seekGate.pending = latched.pending
+      return latched.ms
+    }
+
+    /**
+     * Send one request, then drain whatever was queued behind it.
+     *
+     * The drain sends `settled.send` **directly**: planning it again would see
+     * `inFlight: true` and queue it forever (the first version of this did exactly
+     * that, and a rapid sequence of seeks could wedge the queue).
+     */
+    function sendSeek(ms) {
+      Promise.resolve()
+        .then(() => guarded(command('player.seek', { ms }), t('np.seek')))
+        .then(() => null, () => null)
+        .finally(() => {
+          const settled = settleSeek(seekGate.queue)
+          seekGate.queue = settled.state
+          if (settled.send !== null) sendSeek(settled.send)
+        })
+    }
+
+    /** Ask for a position; the latch holds it on both bars until the host confirms. */
+    function requestSeek(ms) {
+      seekGate.pending = { ms, atMs: Date.now() }
+      const plan = planSeek(seekGate.queue, ms)
+      seekGate.queue = plan.state
+      if (plan.send !== null) sendSeek(plan.send)
+    }
+
+    /**
      * One progress bar for both surfaces, as a native `<input type="range">`
      * (D-36). The platform owns the control — pointer drags that leave the bar,
      * touch, high contrast, and the arrow keys if anything ever focuses it. This
@@ -1225,15 +1274,13 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
 
     const SEEK_STEP_MS = 1000
 
-    function ProgressBar({ getPlayer, onSeek, variant = 'sheet' }) {
+    function ProgressBar({ getPlayer, variant = 'sheet' }) {
       const rootRef = useRef(null)
       const inputRef = useRef(null)
       const bubbleRef = useRef(null)
       const dragRef = useRef(null)
-      const pendingRef = useRef(null)
       const paintedRef = useRef(null)
       const writtenRef = useRef(-1)
-      const seekRef = useRef(idleSeek())
       const [dragging, setDragging] = useState(false)
 
       const durationOf = () => getPlayer()?.durationMs ?? 0
@@ -1293,34 +1340,13 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
 
       /**
        * What the bar should show: the seat of a request still in flight, otherwise
-       * the interpolated host position. The latch is the module's job (D-27); this
-       * only asks it.
+       * the interpolated host position. The latch is shared (`latchSeek`) so a seek
+       * started in the *other* bar lands here on the very next frame.
        */
       const currentMs = () => {
         const player = getPlayer()
-        const latched = resolveSeek(pendingRef.current, player, Date.now())
-        pendingRef.current = latched.pending
-        return latched.ms === null ? estimateMs(player) : latched.ms
-      }
-
-      /**
-       * One seek in flight at a time (D-36). Two overlapping requests break the
-       * latch: the first one's stamp is newer than the second request, so the bar
-       * lets go on the older position and steps back for a poll. The queue keeps
-       * only the newest target — which is also what holding a key means.
-       */
-      const dispatch = (ms) => {
-        const plan = planSeek(seekRef.current, ms)
-        seekRef.current = plan.state
-        if (plan.send === null) return
-        Promise.resolve()
-          .then(() => onSeek(plan.send))
-          .then(() => null, () => null)
-          .finally(() => {
-            const settled = settleSeek(seekRef.current)
-            seekRef.current = settled.state
-            if (settled.send !== null) dispatch(settled.send)
-          })
+        const latched = latchSeek(player, Date.now())
+        return latched === null ? estimateMs(player) : latched
       }
 
       /**
@@ -1332,7 +1358,6 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
         if (!(duration > 0)) return null
         const thumb = dragRef.current?.thumb ?? thumbPxOf(rootRef.current)
         const ms = Math.round(fractionAtClientX(rootRef.current, event.clientX, thumb) * duration)
-        pendingRef.current = { ms, atMs: Date.now() }
         paint(ms)
         return ms
       }
@@ -1371,14 +1396,12 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
           // Keyboard only (or a native drag, in a host that does not cancel the
           // pointerdown): paint immediately, ask the host on `change`.
           const ms = Number(event.currentTarget.value)
-          pendingRef.current = { ms, atMs: Date.now() }
           paint(ms)
         },
         onChange: (event) => {
           const ms = Number(event.currentTarget.value)
-          pendingRef.current = { ms, atMs: Date.now() }
           paint(ms)
-          dispatch(ms)
+          requestSeek(ms)
         },
         // The control's own drag is not reliable here: a host that calls
         // `preventDefault()` on pointerdown (the DSH shell does) cancels the
@@ -1404,7 +1427,7 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
           try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* unsupported */ }
           dragRef.current = null
           setDragging(false)
-          if (ms !== null) dispatch(ms)
+          if (ms !== null) requestSeek(ms)
         },
         onPointerCancel: () => { dragRef.current = null; setDragging(false) },
       }),
@@ -1680,7 +1703,6 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
           h(ProgressBar, {
             getPlayer,
             variant: 'mini',
-            onSeek: (ms) => guarded(command('player.seek', { ms }), t('np.seek')),
           })) : null),
 
         h(ErrorBoundary, {
@@ -1840,7 +1862,6 @@ const POP_EXIT_MS = 160 // keep in sync with --dshm-dur-pop-out (guarded by moti
           h(ProgressBar, {
             getPlayer,
             variant: 'sheet',
-            onSeek: (ms) => guarded(command('player.seek', { ms }), t('np.seek')),
           }),
           h('div', { className: 'dshm-pop-times' },
             h(TimeText, { getPlayer }),

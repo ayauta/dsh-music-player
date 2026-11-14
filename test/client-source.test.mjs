@@ -242,7 +242,8 @@ test('every class the stylesheet dresses is applied somewhere (CSS locality)', (
   assert.deepEqual(orphans, [], 'stylesheet rules for classes nothing renders: ' + orphans.join(', '))
 })
 
-test('the queue panel keeps a failed read apart from loading (CUI-02)', () => {  const source = readFileSync(clientPath, 'utf8')
+test('the queue panel keeps a failed read apart from loading (CUI-02)', () => {
+  const source = readFileSync(clientPath, 'utf8')
   const panel = sliceBetween(source, 'function QueuePanel(', 'function LyricsPanel(')
   assert.match(panel, /setReadState\('failed'\)/, 'a rejected read ends as failed')
   assert.match(panel, /setReadState\('ready'\)/, 'a resolved read ends as ready')
@@ -266,16 +267,45 @@ test('the queue panel keeps a failed read apart from loading (CUI-02)', () => { 
 test('the seek latch is judged by sample time, not by a duration threshold (D-27)', () => {
   const source = readFileSync(clientPath, 'utf8')
   const bar = sliceBetween(source, 'function ProgressBar(', 'function VolumeBar(')
+  const gate = sliceBetween(source, 'function latchSeek(', 'function requestSeek(')
 
   // The seam is "ask the module, write the answer back, interpolate through the one
   // clock reader" — not the exact argument spelling, which forbade threading a
   // clock in and went red on a legitimate refactor in 2026-11-15.
-  assert.match(bar, /resolveSeek\(/, 'the latch decision must come from the playhead module')
-  assert.match(bar, /pendingRef\.current = latched\.pending/,
+  assert.match(gate, /resolveSeek\(/, 'the latch decision must come from the playhead module')
+  assert.match(gate, /seekGate\.pending = latched\.pending/,
     'the release must be written back, otherwise the request never clears')
-  assert.ok(!/\b(1600|900)\b/.test(bar), 'the old duration thresholds must not come back')
+  assert.ok(!/\b(1600|900)\b/.test(gate), 'the old duration thresholds must not come back')
+  assert.match(bar, /latchSeek\(player, Date\.now\(\)\)/,
+    'the bar must ask the shared latch, not keep one of its own')
   assert.match(bar, /estimateMs\(player\)/,
     'the painted position is interpolated on the monotonic clock — through `estimateMs`, which is the one place in the file that reads it')
+})
+
+/**
+ * The latch and the queue belong to the player, not to a widget.
+ *
+ * With one `pending` per bar, a seek made in the mini row only showed up in the
+ * panel when the post-seek snapshot landed — the bar that was clicked jumped at
+ * once, the other one waited a full host round-trip (measured 2026-11-15 in a real
+ * Chromium: `t=0 → sheet 0.393`, `t≈120ms → sheet 0.700`). Two queues had the same
+ * shape of problem: two seeks could race.
+ *
+ * There is no DOM seam in `node --test` for the wiring itself (D-02), so this pins
+ * the three facts that made the difference; the behavioural check lives in the
+ * throwaway Chromium harness.
+ */
+test('one seek gate for both bars, and the drain does not re-plan (D-36)', () => {
+  const source = readFileSync(clientPath, 'utf8')
+  const moduleBlock = sliceBetween(source, 'BEGIN inlined lib/shared/playhead.js', 'END inlined lib/shared/playhead.js')
+  const clientOnly = source.replace(moduleBlock, '')
+  assert.equal((clientOnly.match(/resolveSeek\(/g) ?? []).length, 1,
+    'only the shared gate may consult the latch; a second call site outside the module copy means a second latch')
+  assert.ok(!/pendingRef|seekRef/.test(source),
+    'a per-component latch/queue is what made the other bar wait for the host')
+  const gate = sliceBetween(source, 'function sendSeek(', 'function requestSeek(')
+  assert.match(gate, /sendSeek\(settled\.send\)/,
+    'the drain must send the queued target directly — planning it again sees inFlight and queues it forever')
 })
 
 /**
