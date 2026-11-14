@@ -518,6 +518,7 @@ npm run smoke -- --library <path> --allow-real-library   # 只读诊断，需显
 | 2026-11-14 | Automated | 工作区（bundle `dshm-bb35f28e6e40`） | L1 | `npm run check` + `node scripts/test-repeat.mjs test/player-transport.test.mjs 5` | **Passed**：48 files parse / 158 tests / 0 fail；竞态用例 `0/5 red` | 脚本 | 覆盖 D-32 失败路径、D-33 收口、B33 断言重写、CHANGELOG 守卫；**不覆盖**真实渲染与重启后的行为 |
 | 2026-11-14 | Automated（实现前**预期红**） | 工作区（R15 / D-35） | L1 | `node --test --test-name-pattern='R15' test/player-transport.test.mjs` | **Failed**：`past three seconds: prev restarts…`，`actual: 'a'`（采样 2.5 s、真实 3.1 s 时错误地回了上一首） | 脚本 | 新用例把判据钉在"真实位置"上；另一例"暂停在 2.6 s → 回上一首"当时就是绿的（今天的采样在暂停时是准的） |
 | 2026-11-14 | Automated（**变异已验证**） | 工作区（R15 修后） | L1 | 同命令 + 变异（`prev()` 换回 `state.positionMs`）+ `test-repeat … 3` | **Passed** 2/2；变异 → 1/2；连跑三次 `0/3 red` | 脚本 | `currentPositionMs()` 复用 `positionOf()`，与客户端同一份算术；`isPlayingNow()` 成为快照与规则共用的唯一定义 |
+| 2026-11-15 | **Manual** | `dshm-847e9b43df0b`（重启后的真实宿主 `0.2.2-rc.3 / 6b729fe`） | L3 | 用户重启后按 CURRENT §4 的判据逐条验：R15 四条（3.5s 重播 / 2s 内上一首 / 暂停 3.5s 重播 / 暂停 2s 上一首）+ D-32/D-33 四条（断连不闪旧状态 / 暂停不回缩 / 切歌从 0 起 / 其余不回归） | **Passed**：用户确认"验证完成了，正常" | 用户 | 覆盖 R15 / D-35、D-32、D-33、B35；**不覆盖**长时播放、B36 无障碍（仍未修）、其它界面项 |
 **关于 2026-10-29 那条 L3 记录（`scripts/playback-test.mjs`）的说明**：
 
 - 该脚本直接打运行中的插件，**副作用**：覆盖真实队列、`prefs.set` 改真实设置、改变当前播放、结束后不恢复（见 §4）。
