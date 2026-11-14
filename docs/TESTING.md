@@ -122,7 +122,7 @@ node scripts/bundle-id.mjs                  # 源码指纹 vs 嵌入 ID；不一
 node scripts/bundle-id.mjs --json           # 同上，机器可读（取证记录用）
 node scripts/bundle-id.mjs --write          # 刷新标记行；标记缺失/重复时拒绝写入
 node scripts/bundle-id.mjs --runtime <id>   # 把页面读到的 id 与源码比对；不一致 exit 1
-node scripts/bundle-id.mjs --served --url http://127.0.0.1:PORT [--id @local/dsh-music]
+node scripts/bundle-id.mjs --served --url http://127.0.0.1:PORT [--id @ayauta/dsh-music-player]
 ```
 
 `--served` 的安全约束：`--url` **必填**（不设默认端口）、只接受回环地址、只接受 http、

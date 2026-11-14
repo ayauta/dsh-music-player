@@ -12,9 +12,15 @@
 
 ---
 
-## [Unreleased] — `b8dc624` 之后（未发版）
+## [Unreleased]
 
-`package.json` 仍是 `1.7.0`；下列改动都在 `b8dc624` 之后提交，尚未发版。
+（下一版开始记在这里。）
+
+## [1.8.0] — 2026-11-15
+
+首个可发布的版本：包名从 `@local/dsh-music`（`private: true`）改为 `@ayauta/dsh-music-player`，
+加 `license` / `repository` / `files` 与 `npm publish` 的 CI（`v*` tag 触发）。下面全部是 `b8dc624` 之后、
+随这一版一起发出的改动。
 
 **Added**
 - 四层验证网与授权门：L1 状态机与客户端守卫、L2 隔离 Host、Smoke、Bundle ID 取证（`18e8cf5`、`208023c`、`34defc6`、`38f4faa`、`3363e2e`、`1253091`）

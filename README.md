@@ -26,11 +26,30 @@
 
 ## 安装
 
-插件以「链接目录」方式安装进 `desktop` profile（`include:dsh-music` → 本仓库目录）。
+这是一个 **DSH bundle**（`package.json` 声明 `dsh.bundle.patch`）：安装由 DSH 自己完成，不需要手改 profile。
 
-- 关闭：设置 → 插件，或在插件管理里禁用 `@local/dsh-music` 这一行
-- 卸载：插件管理 → `@local/dsh-music` → 卸载（源码目录保留）
-- 重装：对本目录执行 `plugin_manager install_bundle`
+**从 npm 装**（发版之后，一行）：
+
+```text
+plugin_manager install_bundle → target: @ayauta/dsh-music-player
+```
+
+或在 **设置 → 插件 → 添加插件** 里填 `@ayauta/dsh-music-player`。
+
+**从源码目录装**（不用等发版）：
+
+```powershell
+git clone https://github.com/ayauta/dsh-music-player
+```
+
+然后在 **设置 → 插件 → 添加插件** 里选中克隆下来的目录 —— 本地目录是**链接**安装，
+改完代码重新装一次就生效；也可以用 `plugin_manager install_bundle`，`target` 传这个目录的绝对路径。
+
+装好后 **设置 → 插件** 里出现「音乐」一行（行 id `dsh-music`）；关掉这一行等于同时禁用 UI 与 Host 路由。
+
+- 关闭 / 卸载：插件管理 → `@ayauta/dsh-music-player` → 禁用或卸载（源码目录保留）
+- **库索引与设置与包名无关**，写在 `$DSH_HOME/plugin-data/dsh-music/`：换包名、重装、换分支都不会丢库；
+  删掉这个目录等于清空索引（重新扫描即可）
 
 **运行依赖**
 
