@@ -509,6 +509,11 @@ npm run smoke -- --library <path> --allow-real-library   # 只读诊断，需显
 | 2026-11-14 | Automated（**临时变异，已还原**） | 工作区（B35） | L1 | 先试 `issuedAt >= state.positionSampledAt` → 连跑 5 次里 2 次失败，日志出现 `issuedAt === stamp === …426`（同毫秒并列放行）；改为代数比较后再变异（去掉比较）→ 5/5 全红 | **混红→稳定红** | Agent | 毫秒精度不足以表达"先后"；代数比较才是判据 |
 | 2026-11-14 | Automated | 工作区（B35 修后） | L1 | `node --test test/player-transport.test.mjs` × 10 次 | **Passed**：每次 12 tests / 0 fail | 脚本 | 循环现在双向确定：变异稳定红、修复稳定绿 |
 | 2026-11-14 | Automated | 工作区（B35；宿主改动，客户端 bundle 不变 `dshm-016c9bffbb5c`） | L1 | `npm run check` | **Passed**：153 tests / 0 fail | 脚本 | **不覆盖**真实 mpv 下 `getProperty` 的真实延迟分布（需重启 DSH 后 L3） |
+| 2026-11-14 | **Manual** | `dshm-016c9bffbb5c` + B33/B35 宿主修复 | L3 | 用户连点暂停 20 次、观察是否回缩 | **Passed**：用户确认"这次好像真的修好了" | 用户 | 覆盖 B35（暂停后回缩）与 B34；**不覆盖**长时播放、自动切歌边界、其它界面项 |
+| 2026-11-14 | Automated | 工作区（B33 用例重写后） | L1 | `node --test --test-name-pattern='B33' test/player-transport.test.mjs`；再做变异（去掉 `pause()` 的盖章分支） | **Passed** 1/1；变异 → `AssertionError: the pause snapshot carries where mpv actually stopped…` | 脚本 | 夹具换成 189 457ms 的曲目（默认 8s 会让 `seek(41 600)` 被夹到 8 000，旧用例因此什么都没测到）；承重断言是"快照等于引擎真值"，`painted` 那条只是防恒真的前置守卫 |
+| 2026-11-14 | Automated（实现前**预期红**） | 工作区（D-32 失败路径） | L1 | `node --test --test-name-pattern='B34' test/client-source.test.mjs` | **Failed**：catch 分支缺 `acceptResponse` → 补三条断言后红 | 脚本 | 修后：`refreshStatus` 的失败分支同样先门控、再推进编号、后写 session |
+| 2026-11-14 | Automated（**变异已验证**） | 工作区（D-33 写入收口） | L1 | `node --test test/player-source.test.mjs`；变异：把恢复态那处改回裸写 | **Passed** 3/3；变异 → `a playhead write outside the two helpers can drift from its sample stamp (B33/B35)` | 脚本 | 守卫从"数 `Date.now()`"改为"逐行检查 `state.positionMs =` 是否落在 `stampPosition` / `clearPlayhead` 内"——数总和的写法曾放过 9 处裸写 |
+| 2026-11-14 | Automated | 工作区（bundle `dshm-bb35f28e6e40`） | L1 | `npm run check` + `node scripts/test-repeat.mjs test/player-transport.test.mjs 5` | **Passed**：48 files parse / 158 tests / 0 fail；竞态用例 `0/5 red` | 脚本 | 覆盖 D-32 失败路径、D-33 收口、B33 断言重写、CHANGELOG 守卫；**不覆盖**真实渲染与重启后的行为 |
 **关于 2026-10-29 那条 L3 记录（`scripts/playback-test.mjs`）的说明**：
 
 - 该脚本直接打运行中的插件，**副作用**：覆盖真实队列、`prefs.set` 改真实设置、改变当前播放、结束后不恢复（见 §4）。
