@@ -44,6 +44,10 @@
 | `test/bundle-id.test.mjs` | L1 | ✅ 安全 | 临时目录（`mkdtemp`） | 指纹一致性 / 标记唯一性 / 换行归一 / `--write` 幂等 / 缺标记与重复标记拒绝 / 运行时值比对（9 例） |
 | `test/client-source.test.mjs` | L1 | ✅ 安全 | 只读 `client.js` | **静态守卫**（无 DOM 渲染器）：`Cover` 不得解引用可为 null 的 `track`；`ErrorBoundary` 必须同时支持 `fallback` 与 `makeFallback` 且调用点用其中之一；传输行三键 + 模式在 header；hooks 不得在 early return 之后；**客户端不绑任何键**（D-28，含"不得出现 `role: 'slider'` / `tabIndex` / 动作键"）；**队列读取失败不得渲染成加载中**（CUI-02）；**进度条只在值变化时写 DOM**（B32）；**旧状态响应不得覆盖新响应**（B34）。17 例 |
 | `test/guard.test.mjs` | L1 | ✅ 安全 | 无（只起一个本地计数 HTTP 服务） | 证明危险脚本未授权时拒绝，且**目标服务器收到 0 个请求** |
+| `test/playhead.test.mjs` | L1 | ✅ 安全 | 无（纯函数，时钟由参数注入） | 播放头算术 + 等待机制 + 绘制判定 + 响应定序：36 例。**不覆盖**真实渲染 |
+| `test/inline-playhead.test.mjs` | L1 | ✅ 安全 | 只读 `client.js` 与模块 | 生成区逐字符一致；`positionSampledAt` 只能出现在生成区 |
+| `test/player-source.test.mjs` | L1 | ✅ 安全 | 只读 `lib/host/player.js` | 宿主播放头纪律：写入点唯一（`stampPosition`）、三个写入者都用它、`clear()` 清两半 |
+| `test/changelog.test.mjs` | L1 | ✅ 安全 | 只读 `CHANGELOG.md` | 跨版本不得重复 bullet；工具条目只能出现在 `[Unreleased]` |
 | `test/support/fixtures.mjs` | L1 支撑 | ✅ 安全 | 写临时目录 | 用 ffmpeg 生成 8s/3s/3s 夹具与封面 |
 | `test/support/host.mjs` | L2 支撑 | ✅ 隔离 | 临时 `DSH_HOME`、临时库 | 自建临时根、强制 `ao=null`、进程内 dispatch、先 dispose 再删目录 |
 | `test/integration/playback.test.mjs` | L2 | ✅ 隔离无声 | **无声**（`--ao=null`）、仅临时根 | 原 `playback-test` 的 12 组断言迁移地 |

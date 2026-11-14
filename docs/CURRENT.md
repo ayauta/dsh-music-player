@@ -29,7 +29,7 @@
 - 曲库身份：同一路径沿用原 id；改名＝新曲目 + 旧行 `missing`；移除来源保留行与引用，重加恢复原 id
 - 扫描台账：每根 `done/partial/error` + `failed` 计数，异常不留 `running`
 - Host API：`queue.*` / `player.*` / `library.*` / `prefs.*`
-- 验证网：L1 155（`npm run check` = 全量语法检查 + L1）、L2 51、Smoke 21、bundle-id 三方比对（方法见 TESTING §2）
+- 验证网：L1 158（`npm run check` = 全量语法检查 + L1）、L2 51、Smoke 21、bundle-id 三方比对（方法见 TESTING §2）
 - 播放头算术单一份实现：`lib/shared/playhead.js` → 生成进 `client.js` 标记区，守卫逐字符比对（D-24）；
   补间锚在单调时钟上、按采样身份复用锚点、定位等待按采样时刻判新旧（D-27）
 - 键盘：插件**不绑任何键**（D-28）——全局接管、进度/音量方向键、行内 Enter/Space 全部移除

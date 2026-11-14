@@ -46,6 +46,7 @@
 **Docs**
 - 「上一首」3 秒规则升为 `docs/DESIGN.md` **R15**（Approved：播放与暂停同一套规则；取证 `docs/research/2026-11-14-prev-button-convention.md`）；`AGENTS.md` §15 移出为 `docs/agents/skills.md`（AGENTS 333 → 281 行）
 - 文档治理与验证记录（`16bcd45`、`94ece94`、`59a1e9b`、`2473b79` 等）
+- **D-32 覆盖失败路径**：更旧请求的失败原先照样写 `phase: 'error'`，能盖掉已落地的新答案；失败分支现在同样过门控并推进编号（`client-source` 的 B34 用例补三条断言）。**D-33 写入收口**：位置与采样时刻改由 `stampPosition()` 成对写，全仓只剩一处 `Date.now()` 盖章，轮询 / 暂停 / `seek()` 三份同形代码消失；新增 `test/player-source.test.mjs` 三条守卫
 - **修掉上一提交引入的 CHANGELOG 污染**：一条工具条目被 PowerShell 的全局替换写进了 7 个历史版本；同时修正 TESTING / LIMITATIONS / CURRENT 里三处「描述已删实现」的 CUI-01 文本，`D-23` 补标 `Superseded`（被 D-28 取代）；修掉 B33 用例里恒真的断言（默认夹具 8 秒曲目使 `seek(41 600)` 被夹到 8 000，`anchorMs = 0` 让补间永不推进），新增 `test/changelog.test.mjs` 两条守卫
 - `AGENTS.md` **352 → 303 行**：§16 / §16.1 正文移入 `docs/agents/design-process.md`（含 HIG `…/<page>.md` 的固定取用写法与"引用必带平台章节"），AGENTS 只留 4 行指针；§14 由 13 条复述压成"一句话 + 章节指针"，只保留没有上文归属的一条
 - 播放头架构调研笔记 `docs/research/2026-11-13-playhead-architecture.md`（五个媒体 UI 库 + 四套内核 + 服务端观察端的取证），以及据此立的 D-24（抽纯函数模块）/ D-25（抄架构不抄代码）/ D-26（依赖引入按"谁拥有这块逻辑"判，不按行数判）
