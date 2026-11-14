@@ -401,6 +401,12 @@
 - **守卫**：`test/client-source.test.mjs` 的「the client binds no keys of its own (D-28)」——
   不得出现 `addEventListener('keydown'`（除非只为 Escape）、`role: 'slider'`、`tabIndex`、
   以及任何 `Enter/Home/End/ContextMenu/F10/ArrowLeft/ArrowRight` 判定。
+- **补记（2026-11-14，`/research` 取证后）**：本条里"一个不响应方向键的 slider 是错误的无障碍声明"
+  **是错的**（当时也标不出来源）。ARIA 1.2 对 `slider` 只 MUST `aria-valuenow`，方向键原文写作
+  "typically possible"，**没有 MUST/SHOULD**；键盘模型出自 APG，而 APG 自述"不规定规范性要求"。
+  真正的判据是 **WCAG SC 2.1.1**（功能要能通过键盘完成，"同等或可比路径"即可）。
+  取证见 `docs/research/2026-11-14-slider-progressbar-a11y.md`。
+  **本条"不绑键"的决定不变**；但由此推出的两个 role 改动是错的，另立 D-34 处置。
 
 ---
 
@@ -530,3 +536,31 @@
   `clear()` 是唯一例外："哪儿都不是"要把两半都清零，否则是一个空位置配一个新时间戳。
   守卫：`test/player-source.test.mjs` 三条（写入点唯一 / 三个写入者都用它 / `clear()` 清两半），
   变异（把 `seek` 改回手写）会红。
+
+
+---
+
+## D-34 进度条与音量条换原生 `<input type="range">`，不是换 role
+
+- **状态**：Active（2026-11-14）
+- **背景**：D-28 为"不留错误的无障碍声明"，把进度条从 `role="slider"` 改成 `progressbar`、音量条改成
+  `meter`。该动作依据的是一句当时**没有来源**的判断。取证（`docs/research/2026-11-14-slider-progressbar-a11y.md`）结论：
+  1. ARIA 1.2 对 `slider` 只规定 `aria-valuenow` 为 MUST，方向键原文是 "typically possible"，**没有 MUST/SHOULD**；
+     键盘模型出自 APG，而 APG 自述"does not specify normative requirements"。
+  2. 能支撑"声明错误"的是 **WCAG SC 2.1.1**：功能要能通过键盘完成，判据是"**同等或可比的键盘路径**"，
+     不是"这个 div 必须可聚焦"。
+  3. **`progressbar` 被 ARIA 原文定为只读**：「It is not possible for the user to alter the value of a progressbar
+     because it is always read-only.」而我们**保留了指针拖动**（`client.js` 的 `onPointerDown/Move/Up` 连续调用
+     `seekTo()`），于是新声明与事实直接相反——**比它替换掉的声明更假**。`meter` 同样不恰当：音量是用户设定的
+     输入值，不是 gauge，且 `meter` 连 `aria-readonly` 都不支持。
+- **决定**：恢复"可交互"的语义，走**平台能力**：两个控件都换成原生 `<input type="range">`
+  （ARIA in HTML：隐式 `role=slider`；焦点、键盘、指针拖动都由 UA 提供，插件一行键位判定都不写，
+  因此与 D-28 不冲突）。换来之前，`progressbar` / `meter` 作为**临时豁免**保留，理由与到期条件登记在
+  `LIMITATIONS.md` B36。
+- **被否方案**：① 恢复 `role="slider"` + `tabindex` + 插件自处理方向键——与 D-28 正面冲突；
+  ② 改成真正只读的 `progressbar` 并移除指针拖动——与 R04（点击定位与拖动）冲突；
+  ③ 现状（可拖 + 声明只读）——取证已判定为三者中最差的。
+- **后果**：属交互模式变化，`AGENTS.md` §16 五步必须走（视觉补偿：`appearance: none` + 现有
+  `.dshm-progress-*` 的观感要重新落一遍，滑块与轨道的绘制从自绘变成伪元素）；排在 `docs/CURRENT.md` §5。
+- **验证**：换完后 L1 里 `client.js` 不得再出现 `role: 'progressbar'` / `role: 'meter'`；人工核对
+  键盘 Tab 能进、方向键能改、拖动仍可用、视觉与现在同族（`TESTING.md` §2.4 + L3）。
