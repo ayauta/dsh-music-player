@@ -42,7 +42,7 @@
 | `test/integration/scan.test.mjs` | L2 | ✅ 隔离无声 | 仅临时根；真实 `node:sqlite`；**stub ffprobe**（不启动 mpv、不需要 ffmpeg）；故障注入是 `upsertTrack` / `setMissing` 的包装、`roots` DELETE 触发器与可延迟的探针桩 | 扫描结局守恒与生命周期（C1，8 例）+ 身份与来源生命周期（13 例）：单根守恒、探测失败 → `partial`、写入失败不计入 unchanged、每根独立、全失败 → `error`、sweep 写入失败 → `error` 且索引=已提交状态、重扫覆盖、v1→v2 升级与幂等；同路径重扫 id/收藏/歌单不变、相同内容两条路径两首曲目、改名＝新曲目+旧行 missing、移除来源保留行与引用且重新添加恢复同 id（幂等两轮）、移除来源全有或全无（中途失败回滚）、扫描进行中拒绝移除、仍缺失的文件不被复活、移出曲库的曲目不被重扫复活、目录不可读 → `error` 且全员不标 missing、父子根拒绝/同前缀接受/历史重叠一个文件一行且 `root_id` 不来回转移 |
 | `scripts/bundle-id.mjs` | — | ✅ **只读**（仅 `--write` 写文件） | 默认不联网、不写；`--write` 只改标记行；`--served` 只发回环 GET | Bundle ID 校验、`--served` 宿主字节比对、`--runtime` 运行时比对（见 §2.2） |
 | `test/bundle-id.test.mjs` | L1 | ✅ 安全 | 临时目录（`mkdtemp`） | 指纹一致性 / 标记唯一性 / 换行归一 / `--write` 幂等 / 缺标记与重复标记拒绝 / 运行时值比对（9 例） |
-| `test/client-source.test.mjs` | L1 | ✅ 安全 | 只读 `client.js` | **静态守卫**（无 DOM 渲染器）：`Cover` 不得解引用可为 null 的 `track`；`ErrorBoundary` 必须同时支持 `fallback` 与 `makeFallback` 且调用点用其中之一；传输行三键 + 模式在 header；hooks 不得在 early return 之后；**Space 让位于获得焦点的控件**（CUI-01）；**队列读取失败不得渲染成加载中**（CUI-02）。14 例 |
+| `test/client-source.test.mjs` | L1 | ✅ 安全 | 只读 `client.js` | **静态守卫**（无 DOM 渲染器）：`Cover` 不得解引用可为 null 的 `track`；`ErrorBoundary` 必须同时支持 `fallback` 与 `makeFallback` 且调用点用其中之一；传输行三键 + 模式在 header；hooks 不得在 early return 之后；**客户端不绑任何键**（D-28，含"不得出现 `role: 'slider'` / `tabIndex` / 动作键"）；**队列读取失败不得渲染成加载中**（CUI-02）；**进度条只在值变化时写 DOM**（B32）；**旧状态响应不得覆盖新响应**（B34）。17 例 |
 | `test/guard.test.mjs` | L1 | ✅ 安全 | 无（只起一个本地计数 HTTP 服务） | 证明危险脚本未授权时拒绝，且**目标服务器收到 0 个请求** |
 | `test/support/fixtures.mjs` | L1 支撑 | ✅ 安全 | 写临时目录 | 用 ffmpeg 生成 8s/3s/3s 夹具与封面 |
 | `test/support/host.mjs` | L2 支撑 | ✅ 隔离 | 临时 `DSH_HOME`、临时库 | 自建临时根、强制 `ao=null`、进程内 dispatch、先 dispose 再删目录 |

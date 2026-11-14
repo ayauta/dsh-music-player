@@ -105,7 +105,7 @@ CUI 编号只在审计域内稳定；真正开工时再转成 B-id 或需求子�
 
 | ID | 类别 | 观察 | 状态 |
 |---|---|---|---|
-| CUI-01 | 交互可靠性 | 普通 DIV / BUTTON 上的空格仍触发播放切换，未尊重 `defaultPrevented` | **已修（bundle `dshm-2a24b8d96206`，L1 守卫通过），待重启 L3**：先看 `defaultPrevented`，再让 `button / input / [role=option] / [role=slider]` 等拥有空格；音乐表面外只在没有焦点时接管 |
+| CUI-01 | 交互可靠性 | 普通 DIV / BUTTON 上的空格仍触发播放切换，未尊重 `defaultPrevented` | **已由 D-28 整体取代**：插件不再绑任何键（全局接管与行内 Enter/Space 一并删除），本条的修复路径作废；键位回归由 `test/client-source.test.mjs`「the client binds no keys of its own (D-28)」守卫 | 已关闭（被 D-28 取代） |
 | CUI-02 | 交互可靠性 | 队列读取失败与"加载中"混淆（失败后 `rows=[]`），且有自动重放写操作的风险 | **已修（同上），待重启 L3**：`pending / ready / failed` 三态，重读保留旧行不闪「正在载入」，失败给只读重试（只重发 `queue.list`），不清空 Host 队列 |
 | CUI-03 | 布局 | 窄窗口歌名几乎消失、表头竖排、次要列越界 | 待排期（P1） |
 | CUI-04 | 空态 | 收藏零首时提示"音乐库是空的" | 待排期（P1） |

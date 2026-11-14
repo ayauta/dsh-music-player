@@ -46,6 +46,7 @@
 **Docs**
 - 「上一首」3 秒规则升为 `docs/DESIGN.md` **R15**（Approved：播放与暂停同一套规则；取证 `docs/research/2026-11-14-prev-button-convention.md`）；`AGENTS.md` §15 移出为 `docs/agents/skills.md`（AGENTS 333 → 281 行）
 - 文档治理与验证记录（`16bcd45`、`94ece94`、`59a1e9b`、`2473b79` 等）
+- **修掉上一提交引入的 CHANGELOG 污染**：一条工具条目被 PowerShell 的全局替换写进了 7 个历史版本；同时修正 TESTING / LIMITATIONS / CURRENT 里三处「描述已删实现」的 CUI-01 文本，`D-23` 补标 `Superseded`（被 D-28 取代）；修掉 B33 用例里恒真的断言（默认夹具 8 秒曲目使 `seek(41 600)` 被夹到 8 000，`anchorMs = 0` 让补间永不推进），新增 `test/changelog.test.mjs` 两条守卫
 - `AGENTS.md` **352 → 303 行**：§16 / §16.1 正文移入 `docs/agents/design-process.md`（含 HIG `…/<page>.md` 的固定取用写法与"引用必带平台章节"），AGENTS 只留 4 行指针；§14 由 13 条复述压成"一句话 + 章节指针"，只保留没有上文归属的一条
 - 播放头架构调研笔记 `docs/research/2026-11-13-playhead-architecture.md`（五个媒体 UI 库 + 四套内核 + 服务端观察端的取证），以及据此立的 D-24（抽纯函数模块）/ D-25（抄架构不抄代码）/ D-26（依赖引入按"谁拥有这块逻辑"判，不按行数判）
 
@@ -58,7 +59,6 @@
 - 播放面板新增音量行：扬声器图标（可切静音，图标随状态切换）+ 4px 滑杆（滑块常显），
   对接 `player.volume` / `player.mute`。
 
-- `scripts/syntax-check.mjs`（全树 46 个文件）与 `scripts/test-repeat.mjs`（量红率）；`npm run check` 现在是"全量语法检查 + L1"
 
 **Changed**
 - 按压反馈改为"按下即缩、松开即回"：图标键 `scale(.94)`（90ms 进 / 130ms 出 + 12% tint）、
@@ -80,7 +80,6 @@
 
 把队列从播放面板移出，并去掉面板的第二个"屏"。
 
-- `scripts/syntax-check.mjs`（全树 46 个文件）与 `scripts/test-repeat.mjs`（量红率）；`npm run check` 现在是"全量语法检查 + L1"
 
 **Changed**
 - 音乐库新增「播放队列」一栏（`lib.queue`），数据来自一次 `queue.list`；
@@ -99,7 +98,6 @@
 
 ## [1.5.0] — 2026-10-24 · `60b67e9`
 
-- `scripts/syntax-check.mjs`（全树 46 个文件）与 `scripts/test-repeat.mjs`（量红率）；`npm run check` 现在是"全量语法检查 + L1"
 
 **Changed**
 - 队列改为面板内的独立一屏（`screen: 'now' | 'queue'`），点右上队列按钮整块切换。
@@ -115,7 +113,6 @@
 
 ## [1.4.0] — 2026-10-23 · `f400af8`
 
-- `scripts/syntax-check.mjs`（全树 46 个文件）与 `scripts/test-repeat.mjs`（量红率）；`npm run check` 现在是"全量语法检查 + L1"
 
 **Changed**
 - 迷你行改 full-bleed（`margin: 0 -12px`、圆角 0）——后被 v1.7 撤销。
@@ -139,7 +136,6 @@
 - 播放器 / 音乐库 / 设置三个 slot cell 各加一层 ErrorBoundary。
 - 打开面板时的抖动：位置从 `useEffect` 里测量改到 render 期间测量，首帧即到位。
 
-- `scripts/syntax-check.mjs`（全树 46 个文件）与 `scripts/test-repeat.mjs`（量红率）；`npm run check` 现在是"全量语法检查 + L1"
 
 **Changed**
 - 面板按 Apple Music 重排：`[⌄] 正在播放 [⋯]` + 满宽封面 + 标题/艺术家 + 进度 + 五键传输行；
@@ -150,7 +146,6 @@
 
 ## [1.2.0] — 2026-10-20 · `87be04d`（版本号提交 `b3aa1f0`）
 
-- `scripts/syntax-check.mjs`（全树 46 个文件）与 `scripts/test-repeat.mjs`（量红率）；`npm run check` 现在是"全量语法检查 + L1"
 
 **Changed**
 - 迷你播放器去掉卡片化，改为与侧栏行同参数的一行（无边框、无底色、7px 圆角、7% hover tint）。
@@ -180,7 +175,6 @@
 - 统一声级表：Display 21/600、Title 13.5/600、Row 13/500、Sub 12/400、Caption 11/600；
   字体栈 SF → Segoe UI Variable → PingFang SC → 微软雅黑；数字 `tabular-nums`。
 
-- `scripts/syntax-check.mjs`（全树 46 个文件）与 `scripts/test-repeat.mjs`（量红率）；`npm run check` 现在是"全量语法检查 + L1"
 
 **Changed**
 - 传输控件改为实心几何字形；其余图标整套换成 Lucide（ISC，见 `NOTICE.md`）。
