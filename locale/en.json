@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Music",
+    "title": "dsh-music-player",
     "description": "Local hi-res music player with an isolated mpv audio process, library index, mini player and Now Playing."
   }
 }

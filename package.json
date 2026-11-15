@@ -1,6 +1,6 @@
 {
   "name": "@ayauta/dsh-music-player",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "type": "module",
   "description": "Native-feeling local hi-res music player for the DeepSeek Harness: mpv engine, library index, mini player and Now Playing.",
   "license": "MIT",

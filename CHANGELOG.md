@@ -16,6 +16,13 @@
 
 （下一版开始记在这里。）
 
+## [1.8.1] — 2026-11-15
+
+**Changed**
+- 插件显示名改为 `dsh-music-player`（`locale/en.json` / `locale/zh.json` 的 `meta.title`）：插件列表、
+  插件详情页、设置里的那一行现在都显示包名，不再显示「音乐」。**侧栏与面板内的「音乐」没有变**——
+  那是产品标签（`panel.label`），不是插件名。
+
 ## [1.8.0] — 2026-11-15
 
 首个可发布的版本：包名从 `@local/dsh-music`（`private: true`）改为 `@ayauta/dsh-music-player`，
